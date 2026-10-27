@@ -1,0 +1,370 @@
+[
+ {
+  "id": "s01",
+  "tipo": "entrada",
+  "descricao": "Cliente Studio Alfa",
+  "categoria": null,
+  "data": "2026-10-18",
+  "centavos": 250000
+ },
+ {
+  "id": "s02",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-10-17",
+  "centavos": 18600
+ },
+ {
+  "id": "s03",
+  "tipo": "saida",
+  "descricao": "Ônibus",
+  "categoria": "transporte",
+  "data": "2026-10-17",
+  "centavos": 1200
+ },
+ {
+  "id": "s04",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-10-15",
+  "centavos": 12000
+ },
+ {
+  "id": "s05",
+  "tipo": "saida",
+  "descricao": "Cinema",
+  "categoria": "lazer",
+  "data": "2026-10-15",
+  "centavos": 4800
+ },
+ {
+  "id": "s06",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-10-12",
+  "centavos": 180000
+ },
+ {
+  "id": "s07",
+  "tipo": "saida",
+  "descricao": "Feira da semana",
+  "categoria": "alimentacao",
+  "data": "2026-10-10",
+  "centavos": 60000
+ },
+ {
+  "id": "s08",
+  "tipo": "saida",
+  "descricao": "Jantar com amigos",
+  "categoria": "lazer",
+  "data": "2026-10-09",
+  "centavos": 50000
+ },
+ {
+  "id": "s09",
+  "tipo": "saida",
+  "descricao": "Assinatura de software",
+  "categoria": "trabalho",
+  "data": "2026-10-08",
+  "centavos": 29400
+ },
+ {
+  "id": "s10",
+  "tipo": "entrada",
+  "descricao": "Cliente Gama",
+  "categoria": null,
+  "data": "2026-10-05",
+  "centavos": 250000
+ },
+ {
+  "id": "s11",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-10-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h05e1",
+  "tipo": "entrada",
+  "descricao": "Cliente Alfa",
+  "categoria": null,
+  "data": "2026-05-06",
+  "centavos": 312000
+ },
+ {
+  "id": "h05e2",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-05-18",
+  "centavos": 208000
+ },
+ {
+  "id": "h05mor",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-05-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h05ali",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-05-09",
+  "centavos": 52000
+ },
+ {
+  "id": "h05tra",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-05-12",
+  "centavos": 12000
+ },
+ {
+  "id": "h05laz",
+  "tipo": "saida",
+  "descricao": "Lazer",
+  "categoria": "lazer",
+  "data": "2026-05-16",
+  "centavos": 9000
+ },
+ {
+  "id": "h05tra",
+  "tipo": "saida",
+  "descricao": "Transporte",
+  "categoria": "transporte",
+  "data": "2026-05-20",
+  "centavos": 26000
+ },
+ {
+  "id": "h06e1",
+  "tipo": "entrada",
+  "descricao": "Cliente Alfa",
+  "categoria": null,
+  "data": "2026-06-06",
+  "centavos": 366000
+ },
+ {
+  "id": "h06e2",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-06-18",
+  "centavos": 244000
+ },
+ {
+  "id": "h06mor",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-06-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h06ali",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-06-09",
+  "centavos": 61000
+ },
+ {
+  "id": "h06tra",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-06-12",
+  "centavos": 12000
+ },
+ {
+  "id": "h06laz",
+  "tipo": "saida",
+  "descricao": "Lazer",
+  "categoria": "lazer",
+  "data": "2026-06-16",
+  "centavos": 15000
+ },
+ {
+  "id": "h06tra",
+  "tipo": "saida",
+  "descricao": "Transporte",
+  "categoria": "transporte",
+  "data": "2026-06-20",
+  "centavos": 30000
+ },
+ {
+  "id": "h07e1",
+  "tipo": "entrada",
+  "descricao": "Cliente Alfa",
+  "categoria": null,
+  "data": "2026-07-06",
+  "centavos": 258000
+ },
+ {
+  "id": "h07e2",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-07-18",
+  "centavos": 172000
+ },
+ {
+  "id": "h07mor",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-07-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h07ali",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-07-09",
+  "centavos": 48000
+ },
+ {
+  "id": "h07tra",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-07-12",
+  "centavos": 12000
+ },
+ {
+  "id": "h07laz",
+  "tipo": "saida",
+  "descricao": "Lazer",
+  "categoria": "lazer",
+  "data": "2026-07-16",
+  "centavos": 6000
+ },
+ {
+  "id": "h07tra",
+  "tipo": "saida",
+  "descricao": "Transporte",
+  "categoria": "transporte",
+  "data": "2026-07-20",
+  "centavos": 21000
+ },
+ {
+  "id": "h08e1",
+  "tipo": "entrada",
+  "descricao": "Cliente Alfa",
+  "categoria": null,
+  "data": "2026-08-06",
+  "centavos": 432000
+ },
+ {
+  "id": "h08e2",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-08-18",
+  "centavos": 288000
+ },
+ {
+  "id": "h08mor",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-08-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h08ali",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-08-09",
+  "centavos": 70000
+ },
+ {
+  "id": "h08tra",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-08-12",
+  "centavos": 12000
+ },
+ {
+  "id": "h08laz",
+  "tipo": "saida",
+  "descricao": "Lazer",
+  "categoria": "lazer",
+  "data": "2026-08-16",
+  "centavos": 23000
+ },
+ {
+  "id": "h08tra",
+  "tipo": "saida",
+  "descricao": "Transporte",
+  "categoria": "transporte",
+  "data": "2026-08-20",
+  "centavos": 34000
+ },
+ {
+  "id": "h09e1",
+  "tipo": "entrada",
+  "descricao": "Cliente Alfa",
+  "categoria": null,
+  "data": "2026-09-06",
+  "centavos": 354000
+ },
+ {
+  "id": "h09e2",
+  "tipo": "entrada",
+  "descricao": "Cliente Beta",
+  "categoria": null,
+  "data": "2026-09-18",
+  "centavos": 236000
+ },
+ {
+  "id": "h09mor",
+  "tipo": "saida",
+  "descricao": "Aluguel",
+  "categoria": "moradia",
+  "data": "2026-09-05",
+  "centavos": 180000
+ },
+ {
+  "id": "h09ali",
+  "tipo": "saida",
+  "descricao": "Mercado",
+  "categoria": "alimentacao",
+  "data": "2026-09-09",
+  "centavos": 59000
+ },
+ {
+  "id": "h09tra",
+  "tipo": "saida",
+  "descricao": "Internet",
+  "categoria": "trabalho",
+  "data": "2026-09-12",
+  "centavos": 12000
+ },
+ {
+  "id": "h09laz",
+  "tipo": "saida",
+  "descricao": "Lazer",
+  "categoria": "lazer",
+  "data": "2026-09-16",
+  "centavos": 11000
+ },
+ {
+  "id": "h09tra",
+  "tipo": "saida",
+  "descricao": "Transporte",
+  "categoria": "transporte",
+  "data": "2026-09-20",
+  "centavos": 28000
+ }
+]

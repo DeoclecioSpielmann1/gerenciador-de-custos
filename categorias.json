@@ -1,0 +1,8 @@
+[
+  { "id": "moradia", "nome": "Moradia", "icone": "🏠" },
+  { "id": "alimentacao", "nome": "Alimentação", "icone": "🛒" },
+  { "id": "transporte", "nome": "Transporte", "icone": "🚌" },
+  { "id": "trabalho", "nome": "Trabalho", "icone": "💻" },
+  { "id": "lazer", "nome": "Lazer", "icone": "🎬" },
+  { "id": "outros", "nome": "Outros", "icone": "📦" }
+]
