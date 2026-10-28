@@ -43,6 +43,7 @@ async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Err
 function salvar(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(S.items)); }catch(e){} }
 async function carregar(){
   try{ S.cats = await getJSON('data/categorias.json'); }catch(e){ S.cats = CATS_FALLBACK; }
+  try{ S.cfg = await getJSON('data/config.json'); }catch(e){}
   let guardado = null;
   try{ guardado = JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){}
   if(Array.isArray(guardado)){ S.items = guardado; return; }
@@ -70,6 +71,13 @@ function linha(i, mostrarData){
     <span class="ico" aria-hidden="true">${i.tipo==='entrada' ? '💰' : (c ? c.icone : '📦')}</span>
     <span class="t"><b>${esc(i.descricao)}</b><small>${sub}${mostrarData ? ' · ' + diaCurto(i.data) : ''}</small></span>
     <span class="amt ${i.tipo==='entrada'?'in':''}">${i.tipo==='entrada'?'+':'−'} ${brl(i.centavos)}</span></button>`;
+}
+const CFG_PADRAO = {titular:'Seu Nome ou Empresa', texto:'Todos os direitos reservados.', anoInicial:new Date().getFullYear()};
+const cfg = () => ({...CFG_PADRAO, ...(S.cfg||{})});
+function anos(){ const c = cfg(), a = new Date().getFullYear(); return c.anoInicial && c.anoInicial < a ? c.anoInicial + '–' + a : String(a); }
+function rodape(){
+  const c = cfg();
+  return `<footer class="foot no-print"><span>© ${anos()} ${esc(c.titular)}. ${esc(c.texto)}</span><span>Gerenciador de Custos</span></footer>`;
 }
 const botaoNovo = `<button class="btn" data-go="#/novo">+ Novo lançamento</button>`;
 
@@ -233,7 +241,7 @@ function telaDesk(rota, id){
     ${nav('', '📊', 'Resumo')}${nav('lista', '🧾', 'Lançamentos')}${nav('relatorio', '🖨️', 'Imprimir relatório')}
     <button class="btn sm" data-go="#/novo">+ Novo lançamento</button>
     <div class="grow"></div><small class="lbl">Dados salvos neste navegador</small></nav>`;
-  if(rota==='relatorio') return side + `<div class="main">${corpoRelatorio()}</div>`;
+  if(rota==='relatorio') return side + `<div class="main">${corpoRelatorio()}${rodape()}</div>`;
   const drawer = (rota==='novo' || rota==='editar')
     ? `<div class="scrim" data-go="#/"></div><aside class="drawer" aria-label="Lançamento"><div class="dwr">${telaForm(rota==='editar' ? id : undefined)}</div></aside>` : '';
   return `
@@ -266,7 +274,7 @@ function telaDesk(rota, id){
           <td>${i.tipo==='entrada' ? 'Entrada' : esc(cat(i.categoria)?.nome||'Outros')}</td>
           <td class="r amt ${i.tipo==='entrada'?'in':''}">${i.tipo==='entrada'?'+':'−'} ${brl(i.centavos)}</td></tr>`).join('')}</tbody></table>`
           : `<div class="empty">Nada por aqui neste mês.</div>`}</section>
-    </div></div>${drawer}`;
+    </div>${rodape()}</div>${drawer}`;
 }
 
 
@@ -435,7 +443,7 @@ function pdfRelatorio(){
   } else { txt('Nenhum lançamento neste período.', M, y, 10, false, CIN); }
 
   const gerado = new Date().toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
-  pages.forEach((o,k) => { ops = o; txt('Gerado em ' + gerado, M, H-30, 8, false, CIN); txt(`Página ${k+1} de ${pages.length}`, R, H-30, 8, false, CIN, 'r'); });
+  pages.forEach((o,k) => { ops = o; txt('© ' + anos() + ' ' + cfg().titular + ' · Gerado em ' + gerado, M, H-30, 8, false, CIN); txt(`Página ${k+1} de ${pages.length}`, R, H-30, 8, false, CIN, 'r'); });
 
   const objs = [];
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
@@ -473,7 +481,7 @@ function render(){
     else window.scrollTo(0,0);
     return;
   }
-  $app.innerHTML = rota==='lista' ? telaLista() : rota==='relatorio' ? telaRelatorio() : rota==='novo' ? telaForm() : rota==='editar' ? telaForm(id) : telaResumo();
+  $app.innerHTML = (rota==='lista' ? telaLista() : rota==='relatorio' ? telaRelatorio() : rota==='novo' ? telaForm() : rota==='editar' ? telaForm(id) : telaResumo()) + ((rota==='novo' || rota==='editar') ? '' : rodape());
   if(rota==='novo') document.getElementById('valor').focus();
   window.scrollTo(0,0);
 }
