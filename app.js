@@ -1,5 +1,9 @@
 'use strict';
-const LS_KEY = 'gc.lancamentos.v2';
+const LS_BASE = 'gc.lancamentos.v2';
+const lsKey = () => {
+  const s = Auth.sessao() || {};
+  return s.demo ? 'demo_' + LS_BASE : LS_BASE + '.' + (s.email || 'anon');
+};
 const CATS_FALLBACK = [
   { id: 'moradia', nome: 'Moradia', icone: '🏠' }, { id: 'alimentacao', nome: 'Alimentação', icone: '🛒' },
   { id: 'transporte', nome: 'Transporte', icone: '🚌' }, { id: 'trabalho', nome: 'Trabalho', icone: '💻' },
@@ -40,14 +44,29 @@ function toast(t) { $toast.textContent = t; $toast.hidden = false; clearTimeout(
 
 /* ---------- dados ---------- */
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); }
-function salvar() { try { localStorage.setItem(LS_KEY, JSON.stringify(S.items)); } catch (e) { } }
+function salvar() { try { localStorage.setItem(lsKey(), JSON.stringify(S.items)); } catch (e) { } }
 async function carregar() {
   try { S.cats = await getJSON('data/categorias.json'); } catch (e) { S.cats = CATS_FALLBACK; }
   try { S.cfg = await getJSON('data/config.json'); } catch (e) { }
   let guardado = null;
-  try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch (e) { }
+  try { guardado = JSON.parse(localStorage.getItem(lsKey())); } catch (e) { }
   if (Array.isArray(guardado)) { S.items = guardado; return; }
-  try { S.items = await getJSON('data/lancamentos.json'); salvar(); } catch (e) { S.items = Array.isArray(window.GC_SEED) ? window.GC_SEED.map(x => ({ ...x })) : []; }
+
+  if (Auth.isDemo()) {                                   // modo "Conhecer o app": dados de exemplo
+    try { S.items = await getJSON('data/lancamentos.json'); } catch (e) { S.items = Array.isArray(window.GC_SEED) ? window.GC_SEED.map(x => ({ ...x })) : []; }
+    salvar(); return;
+  }
+
+  // usuário real: migra UMA vez os dados da chave antiga (só se ainda existirem) e apaga a chave antiga,
+  // para que nenhum outro usuário herde esses lançamentos
+  try { guardado = JSON.parse(localStorage.getItem(LS_BASE)); } catch (e) { }
+  if (Array.isArray(guardado)) {
+    S.items = guardado; salvar();
+    try { localStorage.removeItem(LS_BASE); } catch (e) { }
+    return;
+  }
+  S.items = [];                                          // conta nova começa vazia
+  salvar();
 }
 const doMes = () => S.items.filter(i => i.data.startsWith(S.mes))
   .sort((a, b) => b.data.localeCompare(a.data) || b.id.localeCompare(a.id));
@@ -64,20 +83,25 @@ function cabecalhoMes() {
     <h1>${nomeMes(S.mes)}</h1>
     <button class="sq" data-act="mes" data-d="1" aria-label="Próximo mês">&gt;</button></header>`;
 }
+const botoesAcao = i => `<button class="ib" data-go="#/editar/${esc(i.id)}" aria-label="Editar ${esc(i.descricao)}" title="Editar"><span aria-hidden="true">✏️</span><span class="tx">Editar</span></button>
+    <button class="ib del" data-act="excluir" data-ficar data-id="${esc(i.id)}" aria-label="Excluir ${esc(i.descricao)}" title="Excluir"><span aria-hidden="true">🗑️</span><span class="tx">Excluir</span></button>`;
 function linha(i, mostrarData) {
   const c = cat(i.categoria);
   const sub = i.tipo === 'entrada' ? 'Entrada' : (c ? c.nome : 'Outros');
-  return `<button class="row" data-go="#/editar/${esc(i.id)}">
+  return `<div class="rw"><button class="row" data-go="#/editar/${esc(i.id)}">
     <span class="ico" aria-hidden="true">${i.tipo === 'entrada' ? '💰' : (c ? c.icone : '📦')}</span>
     <span class="t"><b>${esc(i.descricao)}</b><small>${sub}${mostrarData ? ' · ' + diaCurto(i.data) : ''}</small></span>
-    <span class="amt ${i.tipo === 'entrada' ? 'in' : ''}">${i.tipo === 'entrada' ? '+' : '−'} ${brl(i.centavos)}</span></button>`;
+    <span class="amt ${i.tipo === 'entrada' ? 'in' : ''}">${i.tipo === 'entrada' ? '+' : '−'} ${brl(i.centavos)}</span></button>
+    <div class="acts">${botoesAcao(i)}</div></div>`;
 }
 const CFG_PADRAO = { titular: 'Seu Nome ou Empresa', texto: 'Todos os direitos reservados.', anoInicial: new Date().getFullYear() };
 const cfg = () => ({ ...CFG_PADRAO, ...(S.cfg || {}) });
 function anos() { const c = cfg(), a = new Date().getFullYear(); return c.anoInicial && c.anoInicial < a ? c.anoInicial + '–' + a : String(a); }
 function rodape() {
   const c = cfg();
-  return `<footer class="foot no-print"><span>© ${anos()} ${esc(c.titular)}. ${esc(c.texto)}</span><span>Gerenciador de Custos</span></footer>`;
+  return `<footer class="foot no-print">
+  <button class="sair-m" data-act="sair">🚪 Sair da conta</button>
+  <span>© ${anos()} ${esc(c.titular)}. ${esc(c.texto)}</span><span>Gerenciador de Custos</span></footer>`;
 }
 const botaoNovo = `<button class="btn" data-go="#/novo">+ Novo lançamento</button>`;
 
@@ -162,14 +186,17 @@ function salvarForm(id) {
   salvar(); S.mes = data.slice(0, 7); toast(id ? 'Alterações salvas' : 'Lançamento salvo');
   location.hash = '#/';
 }
-function excluir(id) {
-  if (!confirm('Excluir este lançamento? Essa ação não pode ser desfeita.')) return;
-  S.items = S.items.filter(i => i.id !== id); salvar(); toast('Lançamento excluído'); location.hash = '#/lista';
+function excluir(id, ficar) {
+  const it = S.items.find(i => i.id === id);
+  if (!confirm('Excluir ' + (it ? '“' + it.descricao + '”' : 'este lançamento') + '? Essa ação não pode ser desfeita.')) return;
+  S.items = S.items.filter(i => i.id !== id); salvar(); toast('Lançamento excluído');
+  if (ficar) { S.semRolar = true; render(); return; }          // botão da lista/tabela: permanece na tela
+  if (location.hash === '#/lista') render(); else location.hash = '#/lista';
 }
 
 /* ---------- eventos e rotas ---------- */
 document.addEventListener('click', e => {
-  const go = e.target.closest('[data-go]'); if (go) { location.hash = go.dataset.go; return; }
+  const go = e.target.closest('[data-go]'); if (go && !e.target.closest('[data-act="excluir"]')) { location.hash = go.dataset.go; return; }
   const tp = e.target.closest('[data-tipo]');
   if (tp) {
     document.querySelectorAll('#tipo button').forEach(b => b.classList.toggle('on', b === tp));
@@ -181,13 +208,14 @@ document.addEventListener('click', e => {
   if (a.dataset.act === 'mes') { S.mes = mudaMes(S.mes, +a.dataset.d); render(); }
   if (a.dataset.act === 'filtro') { S.filtro = a.dataset.k; S.semRolar = true; render(); }
   if (a.dataset.act === 'salvar') salvarForm(a.dataset.id);
-  if (a.dataset.act === 'excluir') excluir(a.dataset.id);
+  if (a.dataset.act === 'excluir') excluir(a.dataset.id, a.hasAttribute('data-ficar'));
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('#valor,#desc')) document.querySelector('[data-act=salvar]')?.click(); });
 window.addEventListener('hashchange', render);
 
 /* ---------- dashboard desktop (layout da imagem de referência) ---------- */
 const DESK = matchMedia('(min-width: 960px)');
+DESK.addEventListener('change', render);
 const PAL = ['#12485c', '#3bb8c8', '#f2a33a', '#1f7a8c', '#c9822b', '#7a8f5a'];
 const mesCurto = ym => { const [a, m] = ym.split('-').map(Number); return new Date(a, m - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''); };
 
@@ -277,7 +305,9 @@ function telaDesk(rota, id) {
   const nav = (r, ic, n) => `<button class="nav ${rota === r ? 'on' : ''}" data-go="#/${r}"><span aria-hidden="true">${ic}</span>${n}</button>`;
   const side = `<nav class="side"><div class="brand"><i class="logo" aria-hidden="true"></i><span>Gerenciador<br>de Custos</span></div>
     ${nav('', '📊', 'Resumo')}${nav('lista', '🧾', 'Lançamentos')}${nav('relatorio', '🖨️', 'Imprimir relatório')}
-    <div class="grow"></div><small class="lbl">Dados salvos neste navegador</small></nav>`;
+    <div class="grow"></div>
+    <button class="nav sair" data-act="sair"><span aria-hidden="true">🚪</span>Sair</button>
+    <small class="lbl">Dados salvos neste navegador</small></nav>`;
   if (rota === 'relatorio') return side + `<div class="main">${corpoRelatorio()}${rodape()}</div>`;
   const drawer = (rota === 'novo' || rota === 'editar')
     ? `<div class="scrim" data-go="#/"></div><aside class="drawer" aria-label="Lançamento"><div class="dwr">${telaForm(rota === 'editar' ? id : undefined)}</div></aside>` : '';
@@ -332,10 +362,11 @@ function telaDesk(rota, id) {
       <section class="card w12" id="tabela"><div class="sec"><h2>Lançamentos</h2>
         <div class="seg sm" role="tablist">${abas.map(([k, n]) =>
         `<button role="tab" class="${S.filtro === k ? 'on' : ''}" aria-selected="${S.filtro === k}" data-act="filtro" data-k="${k}">${n}</button>`).join('')}</div></div>
-        ${tab.length ? `<table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th></tr></thead><tbody>${tab.map(i =>
+        ${tab.length ? `<table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th><th class="r">Ações</th></tr></thead><tbody>${tab.map(i =>
           `<tr tabindex="0" data-go="#/editar/${esc(i.id)}"><td>${diaCurto(i.data)}</td><td>${esc(i.descricao)}</td>
           <td>${i.tipo === 'entrada' ? 'Entrada' : esc(cat(i.categoria)?.nome || 'Outros')}</td>
-          <td class="r amt ${i.tipo === 'entrada' ? 'in' : ''}">${i.tipo === 'entrada' ? '+' : '−'} ${brl(i.centavos)}</td></tr>`).join('')}</tbody></table>`
+          <td class="r amt ${i.tipo === 'entrada' ? 'in' : ''}">${i.tipo === 'entrada' ? '+' : '−'} ${brl(i.centavos)}</td>
+          <td class="r acts-c">${botoesAcao(i)}</td></tr>`).join('')}</tbody></table>`
       : `<div class="empty">${q ? 'Nenhum lançamento encontrado para “' + esc(S.busca.trim()) + '”.' : 'Nada por aqui neste mês.'}</div>`}</section>
     </div>${rodape()}</div>${drawer}`;
 }
@@ -564,4 +595,16 @@ function render(){
     const pos = e.target.selectionStart; render();
     const el = document.getElementById('busca'); if (el) { el.focus(); el.setSelectionRange(pos, pos); }
   });
-  Auth.init(() => carregar().then(render));
+
+/* ---------- sair (logout) ---------- */
+function sair() {
+  if (!confirm('Deseja sair do app?')) return;
+  if (Auth.isDemo()) { try { localStorage.removeItem(lsKey()); } catch (e) { } }  // modo teste não guarda nada
+  location.hash = '#/';      // o próximo login começa no Resumo
+  Auth.sair();               // apaga a sessão e recarrega -> tela de login
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-act="sair"]')) sair();
+});
+
+Auth.init(() => carregar().then(render));

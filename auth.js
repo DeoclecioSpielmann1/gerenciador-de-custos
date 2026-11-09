@@ -1,8 +1,14 @@
 /* auth.js — tela de acesso (Nome, E-mail, Telefone) + modo "Conhecer o app" */
 (function () {
-  const API_URL = '/api/usuarios';          // backend Node/MySQL (server.js)
+  'use strict';
+  const API_URL = '/api/usuarios';        // backend Node/MySQL (opcional)
   const K_SESSAO = 'gc_sessao';
-  const K_LOCAL = 'gc_usuarios_local';      // reserva caso a API esteja fora do ar
+  const K_LOCAL = 'gc_usuarios_local';    // reserva se a API estiver fora do ar
+
+  /* Onde a sessão fica guardada:
+     localStorage   = continua logado ao fechar o navegador
+     sessionStorage = pede login a cada vez que abrir o navegador */
+  const STORE = localStorage;
 
   /* ---------- validações ---------- */
   const V = {
@@ -10,8 +16,8 @@
       v = v.trim().replace(/\s+/g, ' ');
       if (!v) return 'Informe seu nome.';
       if (v.length < 3) return 'O nome precisa ter ao menos 3 letras.';
-      if (!/^\p{L}[\p{L}'.\- ]*$/u.test(v)) return 'Use apenas letras no nome.';
       if (v.length > 80) return 'O nome pode ter no máximo 80 caracteres.';
+      if (!/^\p{L}[\p{L}'.\- ]*$/u.test(v)) return 'Use apenas letras no nome.';
       return '';
     },
     email(v) {
@@ -40,10 +46,10 @@
   }
 
   /* ---------- sessão ---------- */
-  const lerSessao = () => { try { return JSON.parse(localStorage.getItem(K_SESSAO)); } catch { return null; } };
-  const gravarSessao = (s) => localStorage.setItem(K_SESSAO, JSON.stringify(s));
+  const lerSessao = () => { try { return JSON.parse(STORE.getItem(K_SESSAO)); } catch (e) { return null; } };
+  const gravarSessao = (s) => { try { STORE.setItem(K_SESSAO, JSON.stringify(s)); } catch (e) { } };
 
-  /* ---------- gravação no banco ---------- */
+  /* ---------- gravação do cadastro ---------- */
   async function salvarUsuario(u) {
     try {
       const r = await fetch(API_URL, {
@@ -53,23 +59,23 @@
       });
       const dados = await r.json().catch(() => ({}));
       if (r.status === 422) return { ok: false, erros: dados.erros || {} };
-      if (!r.ok) throw new Error(dados.erro || 'Falha ao salvar');
+      if (!r.ok) throw new Error('API indisponível');
       return { ok: true, id: dados.id, banco: true };
     } catch (e) {
-      if (e instanceof TypeError || /Falha|Failed|fetch/i.test(e.message)) {
-        // API indisponível: guarda neste navegador para não perder o cadastro
+      // sem API (ou erro de rede): guarda neste navegador para não perder o cadastro
+      try {
         const lista = JSON.parse(localStorage.getItem(K_LOCAL) || '[]');
         lista.push({ ...u, criadoEm: new Date().toISOString(), sincronizado: false });
         localStorage.setItem(K_LOCAL, JSON.stringify(lista));
-        return { ok: true, banco: false };
-      }
-      return { ok: false, geral: e.message };
+      } catch (e2) { }
+      return { ok: true, banco: false };
     }
   }
 
-  /* ---------- tela ---------- */
+  /* ---------- tela de login ---------- */
   function renderLogin(aoEntrar) {
     const app = document.getElementById('app');
+    if (!app || app.querySelector('.auth')) return;      // já está na tela
     app.innerHTML = `
       <section class="auth">
         <div class="auth-card">
@@ -126,6 +132,7 @@
 
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
+      if (btn.disabled) return;
       geral.textContent = '';
       const ok = ['nome', 'email', 'telefone'].map(validar).every(Boolean);
       if (!ok) { const p = form.querySelector('.invalido'); if (p) p.focus(); return; }
@@ -166,19 +173,28 @@
   }
 
   /* ---------- API pública ---------- */
+  let iniciar = null;                                   // função do app, definida por Auth.init
+  const entrar = (s) => {
+    if (s.demo) faixaDemo();
+    if (iniciar) iniciar(s); else location.reload();    // reload só se o app.js ainda não registrou
+  };
+
   const Auth = {
-    /** Chame no lugar de iniciar o app direto: Auth.init(() => iniciarApp()) */
     init(iniciarApp) {
-      const entrar = (s) => { if (s.demo) faixaDemo(); iniciarApp(s); };
+      iniciar = iniciarApp;
       const s = lerSessao();
-      if (s) entrar(s); else renderLogin(entrar);
+      if (s) entrar(s); else renderLogin(entrar);       // renderLogin ignora se já estiver na tela
     },
     sessao: lerSessao,
     isDemo: () => !!(lerSessao() || {}).demo,
-    /** Use nas chaves do localStorage do app para separar os dados do teste */
     chave: (base) => (Auth.isDemo() ? 'demo_' + base : base),
-    sair() { localStorage.removeItem(K_SESSAO); location.reload(); },
+    sair() { try { STORE.removeItem(K_SESSAO); } catch (e) { } location.reload(); },
     _validar: V
   };
   window.Auth = Auth;
+
+  /* desenha o login assim que o #app existir, sem esperar o app.js */
+  const cedo = () => { if (!lerSessao()) renderLogin(entrar); };
+  if (document.getElementById('app')) cedo();
+  else document.addEventListener('DOMContentLoaded', cedo);
 })();

@@ -329,12 +329,44 @@ header.bar h1{font-size:clamp(1.7rem,1.1rem+1.8vw,2.5rem)}
 .sl-img svg{width:100%;max-height:270px;height:auto}
 @media (max-width:1099px){.dash>.slide{grid-template-columns:1fr}.sl-img{min-height:0}}
 
+/* ===== Sair ===== */
+.nav.sair{color:var(--neg);margin-top:4px}
+@media (hover:hover){.nav.sair:hover{background:color-mix(in srgb,var(--neg) 12%,transparent);color:var(--neg)}}
+.foot .sair-m{flex:1 0 100%;min-height:48px;margin-bottom:8px;border:1.5px solid var(--line);border-radius:var(--r-m);
+  background:var(--card);color:var(--neg);font-weight:700;cursor:pointer;transition:transform .15s var(--ease),border-color .15s}
+.foot .sair-m:active{transform:scale(.98)}
+@media (hover:hover){.foot .sair-m:hover{border-color:var(--neg)}}
+body.desk .foot .sair-m{display:none}   /* no desktop o botão fica no menu lateral */
+
+/* ===== Editar / Excluir por lançamento ===== */
+.rw{display:flex;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)}
+.rw:last-child{border-bottom:0}
+.rw .row{flex:1 1 100%;min-width:0;border-bottom:0}
+.acts{flex:1 1 100%;display:flex;justify-content:flex-end;gap:8px;padding:0 0 12px}
+.ib{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:0 14px;
+  border:1.5px solid var(--line);border-radius:var(--r-s);background:var(--card);color:var(--ink);font-size:.92rem;font-weight:700;
+  cursor:pointer;transition:transform .15s var(--ease),border-color .15s,background .15s}
+.ib:active{transform:scale(.95)}
+.ib.del{color:var(--neg)}
+@media (hover:hover){
+  .ib:hover{border-color:var(--ink);background:var(--chip)}
+  .ib.del:hover{border-color:var(--neg);background:color-mix(in srgb,var(--neg) 12%,transparent)}
+}
+@media (min-width:600px){
+  .rw .row{flex:1 1 0}
+  .acts{flex:none;padding:0 0 0 8px}
+}
+/* tabela do desktop: só ícones */
+td.acts-c{white-space:nowrap;width:1%}
+.acts-c .ib{width:36px;min-height:36px;padding:0;margin-left:6px;font-size:1rem}
+.acts-c .tx{display:none}
+
 /* ===== Impressão ===== */
 @media print{
   :root{--bg:#fff;--card:#fff;--ink:#000;--mute:#444;--line:#bbb;--chip:#eee;--pos:#0a5a4a;--neg:#8a1c1c}
   body,body.desk{display:block;background:#fff}
   #app,body.desk #app{display:block;max-width:none;min-height:0;padding:0}
-  .no-print,.side,.scrim,.drawer,.toast{display:none!important}
+  .no-print,.side,.scrim,.drawer,.toast,.acts,.acts-c{display:none!important}
   .main{display:block;min-height:0;padding:0;max-width:none}
   .report{border:0;padding:0;border-radius:0}
   .rk .card{border:1px solid #999}
