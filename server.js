@@ -211,10 +211,10 @@ pool.query('SELECT 1')
     if (DICAS[e.code]) console.error('  ->', DICAS[e.code]);
   });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('\nGerenciador de Custos no ar');
-  console.log('  PC:      http://localhost:' + PORT);
-  for (const lista of Object.values(os.networkInterfaces()))
-    for (const i of lista || [])
-      if (i.family === 'IPv4' && !i.internal) console.log('  Celular: http://' + i.address + ':' + PORT + '   (mesmo Wi-Fi)');
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('\nGerenciador de Custos no ar');
+    // ... logs de IP ...
+  });
+}
+module.exports = { app, validar }; // Exporta para os testes

@@ -2,6 +2,18 @@
   "name": "gerenciador-de-custos",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.19.2", "mysql2": "^3.9.0" }
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest --detectOpenHandles --forceExit"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^4.22.3",
+    "express-session": "^1.19.0",
+    "mysql2": "^3.24.6"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  }
 }
