@@ -75,7 +75,9 @@ setInterval(() => { for (const [k, f] of falhas) if (Date.now() > f.ate) falhas.
 const regenerar = req => new Promise((ok, no) => req.session.regenerate(e => e ? no(e) : ok()));
 async function abrirSessao(req, u) {
   await regenerar(req);                       // novo id a cada login (evita fixação de sessão)
-  req.session.uid = u.id; req.session.nome = u.nome; req.session.email = u.email; req.session.ultimo = Date.now();
+  req.session.uid = u.id; req.session.nome = u.nome; req.session.email = u.email;
+  req.session.demo = !!u.demo;                // marca a sessão do modo "Conhecer o app"
+  req.session.ultimo = Date.now();
 }
 function exigir(req, res, next) {
   const s = req.session;
@@ -135,10 +137,25 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => { res.clearCookie('gc.sid'); res.status(204).end(); });
 });
 
+/* modo "Conhecer o app": sessão sem usuário no banco (tem que ficar ANTES do exigir) */
+app.post('/api/demo', async (req, res) => {
+  try {
+    await abrirSessao(req, { id: 'demo', nome: 'Visitante', email: '', demo: true });
+    res.json({ demo: true });
+  } catch (e) {
+    res.status(500).json({ erro: 'Não foi possível abrir o modo de teste.' });
+  }
+});
+
 /* ---------- tudo abaixo exige login ---------- */
 app.use(exigir);
-app.get('/api/me', (req, res) => res.json({ id: req.session.uid, nome: req.session.nome, email: req.session.email }));
+app.get('/api/me', (req, res) => res.json({
+  id: req.session.uid, nome: req.session.nome, email: req.session.email, demo: !!req.session.demo
+}));
 
+/* o visitante do modo de teste não grava nem lê nada do banco */
+app.use('/api/lancamentos', (req, res, next) =>
+  req.session.demo ? res.status(403).json({ erro: 'Indisponível no modo de teste.' }) : next());
 /* ---------- lançamentos (sempre filtrados pelo usuário logado) ---------- */
 function lanc(b = {}) {
   const id = String(b.id || ''), tipo = b.tipo, descricao = String(b.descricao || '').trim().slice(0, 60);

@@ -1,0 +1,63 @@
+/* auth.css — login responsivo (usa os tokens do style.css, com valores de reserva) */
+.auth{flex:1;display:grid;place-items:center;padding:clamp(4px,3vh,32px) 0}
+.auth-card{width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px;
+  background:var(--card,#fff);color:var(--ink,#2a2a30);border:1.5px solid var(--line,#dde2e3);
+  border-radius:var(--r-l,12px);padding:clamp(20px,5vw,32px)}
+.auth-marca{display:flex;align-items:center;gap:10px;color:var(--title,var(--ink,#2a2a30))}
+.auth-logo{flex:none;width:36px;height:36px;border-radius:8px;
+  background:linear-gradient(#fff,#fff) 9px 18px/4px 10px no-repeat,linear-gradient(#fff,#fff) 16px 12px/4px 16px no-repeat,
+  linear-gradient(#fff,#fff) 23px 7px/4px 21px no-repeat,linear-gradient(var(--teal,#5f9ea0),var(--teal,#5f9ea0)) 0 100%/100% 4px no-repeat,var(--slate,#44444d)}
+.auth h1{margin:4px 0 0;font-size:clamp(1.3rem,1.05rem+1.2vw,1.7rem);line-height:1.2;font-weight:300;color:var(--title,inherit)}
+.auth-sub{margin:-6px 0 0;color:var(--mute,#6a7276)}
+
+.auth-abas{display:flex;gap:4px;padding:4px;background:var(--chip,#edf1f1);border-radius:var(--r-m,9px)}
+.auth-abas button{flex:1;min-height:44px;border:1.5px solid transparent;border-radius:var(--r-s,7px);background:none;
+  font-weight:700;color:var(--mute,#6a7276);cursor:pointer;transition:background .18s,color .18s,border-color .18s}
+.auth-abas button.on{background:var(--card,#fff);border-color:var(--ink,#2a2a30);color:var(--ink,#2a2a30)}
+
+#authForm{display:flex;flex-direction:column;gap:14px}
+.auth-campo{display:flex;flex-direction:column;gap:6px}
+.auth-campo label{font-weight:600;font-size:.95rem}
+.auth-campo input{width:100%;min-height:52px;padding:12px 14px;font-size:max(16px,1rem);   /* 16px evita zoom no iOS */
+  background:var(--card,#fff);color:var(--ink,#2a2a30);border:1.5px solid var(--line,#dde2e3);
+  border-radius:var(--r-m,9px);transition:border-color .15s}
+.auth-campo input:focus{border-color:var(--ink,#2a2a30)}
+.auth-campo input.invalido{border-color:var(--neg,#8a1c1c)}
+.auth-erro{color:var(--neg,#8a1c1c);font-size:.88rem;min-height:1.1em}
+.auth-erro-geral{margin:0;text-align:center}
+.auth-erro-geral:empty{display:none}
+.auth-dica{color:var(--mute,#6a7276);font-size:.85rem}
+
+/* campo de senha com botão Mostrar/Ocultar */
+.auth-senha{position:relative;display:flex}
+.auth-senha input{padding-right:92px}
+.auth-olho{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:40px;padding:0 12px;
+  border:0;border-radius:var(--r-s,7px);background:none;color:var(--pos,#2f6f70);font-weight:700;cursor:pointer}
+.auth-olho:focus-visible{outline:3px solid var(--pos,#2f6f70);outline-offset:0}
+
+.auth-btn{width:100%;min-height:52px;padding:14px;border-radius:var(--r-m,9px);font-weight:800;font-size:1.05rem;
+  cursor:pointer;border:1.5px solid var(--btn,#44444d);transition:transform .15s,opacity .15s}
+.auth-btn:active{transform:scale(.985)}
+.auth-btn:disabled{opacity:.6;cursor:progress}
+.auth-btn-primario{background:var(--btn,#44444d);color:var(--btn-ink,#fff)}
+.auth-btn-sec{background:var(--card,#fff);color:var(--ink,#2a2a30);border-color:var(--line,#dde2e3)}
+@media (hover:hover){.auth-btn:not(:disabled):hover{opacity:.9}.auth-abas button:not(.on):hover{color:var(--ink,#2a2a30)}}
+
+.auth-ou{display:flex;align-items:center;gap:12px;color:var(--mute,#6a7276);font-size:.9rem}
+.auth-ou::before,.auth-ou::after{content:"";flex:1;height:1px;background:var(--line,#dde2e3)}
+.auth-nota{margin:0;text-align:center;color:var(--mute,#6a7276);font-size:.85rem}
+
+@media (max-width:380px){.auth-card{border-radius:var(--r-m,9px)}.auth-senha input{padding-right:84px}}
+@media (max-height:560px){.auth{place-items:start center}}
+
+/* faixa do modo de teste (fixa embaixo, para não brigar com o menu/cabeçalho) */
+.demo-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;
+  justify-content:center;gap:6px 14px;padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));
+  background:var(--slate,#44444d);color:#fff;font-size:.9rem}
+.demo-bar button{min-height:36px;padding:0 14px;border:1.5px solid #fff;border-radius:999px;background:none;color:#fff;font-weight:700;cursor:pointer}
+body.com-demo-bar{padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}
+body.com-demo-bar .toast{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+body.com-demo-bar:not(.desk) #app>.btn[data-go="#/novo"]{bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+body.com-demo-bar .side{height:calc(100dvh - var(--band,0px) - 56px)}
+body.com-demo-bar #app,body.com-demo-bar .main{min-height:calc(100dvh - 56px)}
+@media print{.demo-bar{display:none}}
