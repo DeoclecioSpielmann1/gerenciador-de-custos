@@ -12,9 +12,9 @@ const path = require('path');
 /* ====== CONFIGURE AQUI (ou use variáveis de ambiente) ====== */
 const PORT = +(process.env.PORT || 3000);
 const DB = {
-  host:     process.env.DB_HOST || 'localhost',
-  port:     +(process.env.DB_PORT || 3306),
-  user:     process.env.DB_USER || 'root',
+  host: process.env.DB_HOST || 'localhost',
+  port: +(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '',
   database: process.env.DB_NAME || 'gerenciador_custos'
 };
@@ -22,7 +22,7 @@ const INATIVIDADE_MIN = 30;   // minutos parado até pedir login de novo
 /* =========================================================== */
 
 const PUBLICO = path.join(__dirname, 'publico');  // aberto: tela de login + style.css
-const APP     = path.join(__dirname, 'app');      // protegido: só depois do login
+const APP = path.join(__dirname, 'app');          // protegido: só depois do login
 const IDLE = INATIVIDADE_MIN * 60 * 1000;
 
 const app = express();
@@ -67,7 +67,7 @@ function validar(b, cadastro) {
 
 /* ---------- limite de tentativas de login ---------- */
 const falhas = new Map();
-const bloqueado = k => { const f = falhas.get(k); return f && f.n >= 8 && Date.now() < f.ate; };
+const bloqueado = k => { const f = falhas.get(k); return !!(f && f.n >= 8 && Date.now() < f.ate); };
 const falhou = k => { const f = falhas.get(k) || { n: 0 }; f.n++; f.ate = Date.now() + 15 * 60e3; falhas.set(k, f); };
 setInterval(() => { for (const [k, f] of falhas) if (Date.now() > f.ate) falhas.delete(k); }, 60e3).unref();
 
@@ -86,7 +86,7 @@ function exigir(req, res, next) {
     res.set('Cache-Control', 'no-store');
     return next();
   }
-  if (s.uid) s.destroy(() => {});
+  if (s.uid) s.destroy(() => { });
   if (req.originalUrl.startsWith('/api/')) return res.status(401).json({ erro: 'Sessão expirada. Entre novamente.' });
   res.redirect('/login');
 }
@@ -107,7 +107,7 @@ app.post('/api/cadastro', async (req, res) => {
       'INSERT INTO usuarios (nome, email, telefone, senha) VALUES (?, ?, ?, ?)',
       [dados.nome, dados.email, dados.telefone, hash]);
     await abrirSessao(req, { id: r.insertId, nome: dados.nome, email: dados.email });
-    res.status(201).json({ id: r.insertId });
+    res.status(201).json({ id: r.insertId, nome: dados.nome, email: dados.email });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ erros: { email: 'Este e-mail já tem cadastro. Use "Entrar".' } });
     console.error('Erro MySQL:', e.code, e.message);
@@ -125,8 +125,8 @@ app.post('/api/login', async (req, res) => {
     const ok = await bcrypt.compare(dados.senha, u ? u.senha : HASH_FALSO);
     if (!u || !ok) { falhou(chave); return res.status(401).json({ erro: 'E-mail ou senha incorretos.' }); }
     falhas.delete(chave);
-    await abrirSessao(req, { ...u, email: dados.email });
-    res.json({ nome: u.nome });
+    await abrirSessao(req, { id: u.id, nome: u.nome, email: dados.email });
+    res.json({ id: u.id, nome: u.nome, email: dados.email });
   } catch (e) {
     console.error('Erro MySQL:', e.code, e.message);
     res.status(500).json({ erro: 'Erro ao consultar o banco.' });
@@ -156,13 +156,17 @@ app.get('/api/me', (req, res) => res.json({
 /* o visitante do modo de teste não grava nem lê nada do banco */
 app.use('/api/lancamentos', (req, res, next) =>
   req.session.demo ? res.status(403).json({ erro: 'Indisponível no modo de teste.' }) : next());
+
+/* emissor de notas (o próprio router também bloqueia o modo de teste) */
+app.use('/api/notas', require('./publico/notas')(pool));
+
 /* ---------- lançamentos (sempre filtrados pelo usuário logado) ---------- */
 function lanc(b = {}) {
   const id = String(b.id || ''), tipo = b.tipo, descricao = String(b.descricao || '').trim().slice(0, 60);
   const data = String(b.data || ''), centavos = b.centavos;
   if (!/^[A-Za-z0-9]{1,24}$/.test(id) || !['entrada', 'saida'].includes(tipo) || !descricao ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(data) || isNaN(Date.parse(data)) ||
-      !Number.isInteger(centavos) || centavos < 1 || centavos > 99999999999) return null;
+    !/^\d{4}-\d{2}-\d{2}$/.test(data) || isNaN(Date.parse(data)) ||
+    !Number.isInteger(centavos) || centavos < 1 || centavos > 99999999999) return null;
   const categoria = tipo === 'saida' && b.categoria ? String(b.categoria).slice(0, 30) : null;
   return { id, tipo, descricao, categoria, data, centavos };
 }
@@ -206,22 +210,33 @@ app.delete('/api/lancamentos/:id', async (req, res) => {
 });
 
 app.use('/data', express.static(path.join(__dirname, 'data')));   // categorias.json e config.json (só com login)
-app.use(express.static(APP));   // index.html, app.js, etc. (só chegam aqui com login)
+app.use(express.static(APP));   // index.html, app.js, notas.html etc. (só chegam aqui com login)
+
+/* JSON malformado e erros inesperados: resposta limpa em vez de página de erro do Express */
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ erro: 'Requisição inválida.' });
+  console.error('Erro:', err.message);
+  res.status(500).json({ erro: 'Erro interno.' });
+});
 
 /* ---------- inicialização ---------- */
 const DICAS = {
   ER_ACCESS_DENIED_ERROR: 'Usuário ou senha do MySQL incorretos: edite DB.user / DB.password no topo do server.js (ou defina DB_USER / DB_PASS).',
-  ER_BAD_DB_ERROR:        'O banco "' + DB.database + '" não existe: rode o schema_mysql.sql no DBeaver (Alt+X).',
-  ECONNREFUSED:           'O MySQL não está ligado (ou a porta ' + DB.port + ' está errada).'
+  ER_BAD_DB_ERROR: 'O banco "' + DB.database + '" não existe: rode o schema_mysql.sql no DBeaver (Alt+X).',
+  ECONNREFUSED: 'O MySQL não está ligado (ou a porta ' + DB.port + ' está errada).'
 };
 pool.query('SELECT 1')
   .then(() => console.log('MySQL conectado em', DB.host + ':' + DB.port, '/', DB.database))
   .then(() => pool.query(`SELECT
       (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'senha') AS senha,
-      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lancamentos') AS lanc`))
+      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lancamentos') AS lanc,
+      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notas') AS notas`))
   .then(([[r]]) => {
     if (!+r.senha || !+r.lanc)
       console.error('ATENÇÃO - faltam a coluna usuarios.senha e/ou a tabela lancamentos. Rode o schema_mysql.sql no DBeaver (Alt+X).');
+    if (!+r.notas)
+      console.error('ATENÇÃO - falta a tabela notas (emissor de notas). Rode o schema_notas.sql no DBeaver (Alt+X).');
   })
   .catch(e => {
     console.error('ATENÇÃO - sem conexão com o MySQL:', e.code, e.message);
@@ -230,8 +245,12 @@ pool.query('SELECT 1')
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
+    const ips = Object.values(os.networkInterfaces()).flat()
+      .filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
     console.log('\nGerenciador de Custos no ar');
-    // ... logs de IP ...
+    console.log('  PC:      http://localhost:' + PORT);
+    ips.forEach(ip => console.log('  Celular: http://' + ip + ':' + PORT));
+    console.log('');
   });
 }
 module.exports = { app, validar }; // Exporta para os testes

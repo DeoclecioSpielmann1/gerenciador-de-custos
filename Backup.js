@@ -10,9 +10,13 @@
 
   Extras.htmlBackup = () => {
     const u = Extras.ultimoBackup();
+    const ultimo = u ? new Date(u) : null;
+    const ultimoTexto = ultimo && !Number.isNaN(ultimo.getTime())
+      ? ultimo.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+      : 'nunca';
     return `<section class="card"><h2 class="ch">Salvar uma cópia</h2>
       <p class="lbl">Seus dados ficam guardados neste navegador. Baixe uma cópia para não perder nada ao limpar o navegador ou trocar de aparelho.</p>
-      <p class="lbl">Último backup: <b>${u ? new Date(u).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca'}</b> · ${S.items.length} ${S.items.length === 1 ? 'lançamento' : 'lançamentos'}</p>
+      <p class="lbl">Último backup: <b>${ultimoTexto}</b> · ${S.items.length} ${S.items.length === 1 ? 'lançamento' : 'lançamentos'}</p>
       <div class="rbtns"><button class="btn sm rbtn" data-act="bk-json">⬇️ Backup completo (.json)</button><button class="btn sm rbtn alt" data-act="bk-csv">📄 Planilha (.csv)</button></div></section>
       <section class="card"><h2 class="ch">Restaurar um backup</h2>
       <p class="lbl">Escolha um arquivo .json gerado por este app. Os dados do arquivo são somados aos atuais e nada é apagado.</p>
@@ -44,8 +48,15 @@
       if (file.size > 5e6) throw new Error('Arquivo muito grande.');
       const j = JSON.parse(await lerArquivo(file)), d = j && j.app === 'gerenciador-de-custos' && j.dados;
       if (!d || !Array.isArray(d.lancamentos)) throw new Error('Este arquivo não é um backup do app.');
-      const dataOk = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s), idOk = s => typeof s === 'string' && s.length > 0 && s.length <= 40;
-      const valOk = x => x && idOk(x.id) && (x.tipo === 'entrada' || x.tipo === 'saida') && Number.isInteger(x.centavos) && x.centavos > 0 && typeof x.descricao === 'string';
+      const dataOk = s => {
+        if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+        const [a, m, d] = s.split('-').map(Number);
+        const dt = new Date(a, m - 1, d);
+        return dt.getFullYear() === a && dt.getMonth() === m - 1 && dt.getDate() === d;
+      };
+      const idOk = s => typeof s === 'string' && s.length > 0 && s.length <= 40;
+      const valOk = x => x && idOk(x.id) && (x.tipo === 'entrada' || x.tipo === 'saida') &&
+        Number.isInteger(x.centavos) && x.centavos > 0 && x.centavos <= 99999999999 && typeof x.descricao === 'string';
       const cat1 = x => x.tipo === 'saida' ? (typeof x.categoria === 'string' ? x.categoria.slice(0, 40) : 'outros') : null;
       const novos = (lista, ok, mapa, atuais) => { const ids = new Set(atuais.map(i => i.id)); return (Array.isArray(lista) ? lista : []).filter(x => ok(x) && !ids.has(x.id)).map(mapa); };
       const base = x => ({ id: x.id, tipo: x.tipo, descricao: x.descricao.slice(0, 60), categoria: cat1(x), centavos: x.centavos });
@@ -54,16 +65,42 @@
       const F = novos(d.fixas, x => valOk(x) && Number.isInteger(x.dia) && x.dia >= 1 && x.dia <= 31 && /^\d{4}-\d{2}$/.test(x.inicio || ''),
         x => ({ ...base(x), dia: x.dia, inicio: x.inicio, gerados: Array.isArray(x.gerados) ? x.gerados.filter(m => /^\d{4}-\d{2}$/.test(m)) : [] }), S.rec);
       const O = Object.entries(d.orcamentos && typeof d.orcamentos === 'object' ? d.orcamentos : {})
-        .filter(([k, v]) => /^[\w-]{1,40}$/.test(k) && Number.isInteger(v) && v > 0 && !(k in S.orc));
+        .filter(([k, v]) => /^[\w-]{1,40}$/.test(k) && Number.isInteger(v) && v > 0 && v <= 99999999999 && !(k in S.orc));
       if (!L.length && !C.length && !F.length && !O.length) { toast('Nada novo para importar.'); return; }
       if (!confirm(`Importar ${L.length} lançamento(s), ${C.length} conta(s), ${F.length} conta(s) fixa(s) e ${O.length} limite(s)?\nOs dados atuais serão mantidos.`)) return;
-      S.items.push(...L); S.contas.push(...C); S.rec.push(...F); O.forEach(([k, v]) => S.orc[k] = v);
-      salvar(); Extras.salvar(); toast('Backup restaurado'); S.semRolar = true; render();
+      if (L.length) {
+        if (Auth.isDemo()) {
+          S.items.push(...L);
+          salvarDemo();
+        } else {
+          S.items = await api('POST', API + '/importar', L);
+        }
+      }
+      S.contas.push(...C); S.rec.push(...F); O.forEach(([k, v]) => S.orc[k] = v);
+      Extras.gerarRecorrentes();
+      Extras.salvar();
+      toast('Backup restaurado');
+      S.semRolar = true;
+      render();
     } catch (err) { toast(err instanceof SyntaxError ? 'Arquivo inválido.' : (err.message || 'Falha ao importar.'), 3500); }
   }
-  function apagarTudo() {
+  async function apagarTudo() {
     if (prompt('Isso apaga todos os seus lançamentos, orçamentos e contas deste navegador.\nDigite APAGAR para confirmar:') !== 'APAGAR') return;
-    S.items = []; S.orc = {}; S.rec = []; S.contas = []; salvar(); Extras.salvar(); toast('Dados apagados'); S.semRolar = true; render();
+    try {
+      if (!Auth.isDemo()) {
+        for (const item of [...S.items]) {
+          await api('DELETE', API + '/' + encodeURIComponent(item.id));
+        }
+      }
+      S.items = []; S.orc = {}; S.rec = []; S.contas = [];
+      if (Auth.isDemo()) salvarDemo();
+      Extras.salvar();
+      toast('Dados apagados');
+      S.semRolar = true;
+      render();
+    } catch (err) {
+      toast(err.message || 'Não foi possível apagar todos os dados.', 3500);
+    }
   }
 
   document.addEventListener('click', e => {

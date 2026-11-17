@@ -13,7 +13,7 @@
   function linhaConta(c) {
     const k = cat(c.categoria), ent = c.tipo === 'entrada';
     return `<div class="rw"><div class="row st">
-      <span class="ico" aria-hidden="true">${ent ? '💰' : (k ? k.icone : '📦')}</span>
+      <span class="ico" aria-hidden="true">${ent ? '💰' : (k ? esc(k.icone) : '📦')}</span>
       <span class="t"><b>${esc(c.descricao)}</b><small>${rotVenc(c)}${c.recId ? ' · 🔁 fixa' : ''}</small></span>
       <span class="amt ${ent ? 'in' : ''}">${ent ? '+' : '−'} ${brl(c.centavos)}</span></div>
       <div class="acts">
@@ -48,7 +48,7 @@
       return `<header class="top"><button class="sq" data-go="#/contas" aria-label="Voltar">&lt;</button><h1>${c ? 'Editar conta' : 'Nova conta'}</h1><span></span></header>
       <div class="seg" id="ctipo"><button class="${tipo === 'saida' ? 'on' : ''}" data-ctipo="saida">A pagar</button><button class="${tipo === 'entrada' ? 'on' : ''}" data-ctipo="entrada">A receber</button></div>
       <div class="field" id="cfValor"><label class="lbl" for="cValor">Valor (R$)</label>
-        <input id="cValor" class="big" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${c ? (c.centavos / 100).toFixed(2).replace('.', ',') : ''}"><div class="msg" id="cmValor"></div></div>
+        <input id="cValor" class="big" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${c ? (c.centavos / 100).toFixed(2).replace('.', ',') : ''}"><div class="msg" id="cmValor" role="alert"></div></div>
       <div class="field"><label class="lbl" for="cDesc">Descrição</label>
         <input id="cDesc" autocomplete="off" maxlength="60" placeholder="Ex.: Aluguel, Internet, Salário" value="${c ? esc(c.descricao) : ''}"></div>
       <div class="field" id="cfCat" ${tipo === 'entrada' ? 'hidden' : ''}><span class="lbl">Categoria</span>
@@ -65,7 +65,9 @@
   function salvarConta(id) {
     const g = i => document.getElementById(i);
     const tipo = document.querySelector('#ctipo .on').dataset.ctipo, centavos = parseValor(g('cValor').value), venc = g('cVenc').value;
-    if (!centavos) { g('cfValor').classList.add('err'); g('cmValor').textContent = 'Informe um valor maior que zero.'; g('cValor').focus(); return; }
+    const erro = msg => { g('cfValor').classList.add('err'); g('cmValor').textContent = msg; g('cValor').focus(); };
+    if (!centavos) return erro('Informe um valor maior que zero.');
+    if (centavos > MAX_CENTAVOS) return erro('Valor alto demais.');
     if (!venc) { g('cVenc').focus(); return; }
     const categoria = tipo === 'saida' ? (document.querySelector('#cchips .on')?.dataset.ccat || 'outros') : null;
     const descricao = g('cDesc').value.trim() || (tipo === 'entrada' ? 'A receber' : (cat(categoria)?.nome || 'Conta'));
@@ -76,10 +78,17 @@
     } else S.contas.push({ id: Extras.novoId(), tipo, descricao, categoria, centavos, venc });
     Extras.salvar(); toast(id ? 'Alterações salvas' : 'Conta salva'); location.hash = '#/contas';
   }
-  function pagarConta(id) {
-    const c = S.contas.find(x => x.id === id); if (!c) return;
+
+  /* pagar/receber: vira um lançamento de verdade (grava no servidor; some das pendentes só se der certo) */
+  const pagando = new Set();
+  async function pagarConta(id) {
+    const c = S.contas.find(x => x.id === id); if (!c || pagando.has(id)) return;
     const l = { id: 'l' + Date.now().toString(36), tipo: c.tipo, descricao: c.descricao, categoria: c.tipo === 'saida' ? (c.categoria || 'outros') : null, data: hojeISO(), centavos: c.centavos };
-    S.items.push(l); salvar();
+    pagando.add(id);
+    try { await gravar(l, true); }
+    catch (e) { toast(e.message, 4500); return; }
+    finally { pagando.delete(id); }
+    S.items.push(l); if (Auth.isDemo()) salvarDemo();
     S.contas = S.contas.filter(x => x.id !== id); Extras.salvar();
     toast((c.tipo === 'entrada' ? 'Recebimento registrado' : 'Pagamento registrado') + (l.categoria ? Extras.avisoOrcamento(l.categoria, l.data) : ''), 4200);
     S.semRolar = true; render();

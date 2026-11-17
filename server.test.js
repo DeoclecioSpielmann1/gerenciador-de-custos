@@ -70,3 +70,33 @@ describe('Testes da função de Lançamentos (Back-end)', () => {
     expect(item).toBeNull();
   });
 });
+
+const { montar, docOk } = require('./publico/notas');
+
+describe('Testes do emissor de notas', () => {
+  test('Deve validar CPF e montar uma nota válida', () => {
+    expect(docOk('52998224725')).toBe(true);
+    const resultado = montar({
+      tipo: 'servico',
+      data: '2026-06-06',
+      emitente: { nome: 'Empresa Teste', doc: '52998224725' },
+      cliente: { nome: 'Cliente Teste', doc: '' },
+      itens: [{ desc: 'Consultoria', qtd: 2, c: 15000 }],
+      desconto: 5000,
+      pagamento: 'Pix'
+    });
+    expect(resultado.erro).toBeUndefined();
+    expect(resultado.nota.total).toBe(25000);
+  });
+
+  test('Deve rejeitar data impossível', () => {
+    const resultado = montar({
+      tipo: 'produto',
+      data: '2026-02-31',
+      emitente: { nome: 'Empresa Teste', doc: '52998224725' },
+      cliente: { nome: 'Cliente Teste' },
+      itens: [{ desc: 'Produto', qtd: 1, c: 1000 }]
+    });
+    expect(resultado.erro).toBe('Data inválida.');
+  });
+});

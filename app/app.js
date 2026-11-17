@@ -1,5 +1,9 @@
 'use strict';
+/* app.js — Gerenciador de Custos
+   Usuário real: lançamentos ficam no MySQL (API /api/lancamentos).
+   Modo "Conhecer o app": dados de exemplo no localStorage, nada vai ao servidor. */
 const LS_BASE = 'gc.lancamentos.v2';
+const API = '/api/lancamentos';
 const lsKey = () => {
   const s = Auth.sessao() || {};
   return s.demo ? 'demo_' + LS_BASE : LS_BASE + '.' + (s.email || 'anon');
@@ -8,6 +12,8 @@ const CATS_FALLBACK = [
   { id: 'moradia', nome: 'Moradia', icone: '🏠' }, { id: 'alimentacao', nome: 'Alimentação', icone: '🛒' },
   { id: 'transporte', nome: 'Transporte', icone: '🚌' }, { id: 'trabalho', nome: 'Trabalho', icone: '💻' },
   { id: 'lazer', nome: 'Lazer', icone: '🎬' }, { id: 'outros', nome: 'Outros', icone: '📦' }];
+const MAX_CENTAVOS = 99999999999;      // mesmo limite do servidor
+(() => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '/extras.css'; document.head.append(l); })();
 
 const S = { cats: [], items: [], mes: mesDe(new Date()), filtro: 'todos' };
 const $app = document.getElementById('app');
@@ -16,13 +22,16 @@ const $toast = document.getElementById('toast');
 /* ---------- utilitários ---------- */
 function mesDe(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 function hojeISO() { const d = new Date(); return mesDe(d) + '-' + String(d.getDate()).padStart(2, '0'); }
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function brl(c, forcar) {
   const casas = (forcar || c % 100) ? 2 : 0;
   return 'R$ ' + (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
-function parseValor(txt) {            // "1.234,56" | "186" | "12,5" -> centavos
-  const n = parseFloat(String(txt).trim().replace(/\./g, '').replace(',', '.'));
+function parseValor(txt) {            // "1.234,56" | "186" | "12,5" | "12.50" -> centavos
+  let t = String(txt).trim().replace(/[^\d.,]/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');   // vírgula = decimal; pontos = milhar
+  else if (!/\.\d{1,2}$/.test(t)) t = t.replace(/\./g, '');          // "1.234" = mil; "12.50" = decimal
+  const n = parseFloat(t);
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 }
 function nomeMes(ym) {
@@ -40,33 +49,56 @@ function diaCurto(iso) {
   return d + ' ' + new Date(a, m - 1, d).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
 }
 const cat = id => S.cats.find(c => c.id === id);
-function toast(t) { $toast.textContent = t; $toast.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => $toast.hidden = true, 2200); }
+/* módulos opcionais (dados.js, orcamento.js, contas.js, backup.js): se faltar ou falhar, o app segue funcionando */
+const ex = (fn, ...a) => { try { return typeof Extras !== 'undefined' ? (Extras[fn](...a) || '') : ''; } catch (e) { console.error('Extras.' + fn, e); return ''; } };
+const exTela = (rota, id, desk) => { try { return typeof Extras !== 'undefined' ? Extras.tela(rota, id, desk) : null; } catch (e) { console.error('Extras.tela', e); return null; } };
+function toast(t, ms = 2200) { $toast.textContent = t; $toast.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => $toast.hidden = true, ms); }
 
 /* ---------- dados ---------- */
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); }
-function salvar() { try { localStorage.setItem(lsKey(), JSON.stringify(S.items)); } catch (e) { } }
+
+async function api(metodo, url, corpo) {
+  let r;
+  try {
+    r = await fetch(url, {
+      method: metodo, credentials: 'same-origin',
+      headers: corpo ? { 'Content-Type': 'application/json' } : undefined,
+      body: corpo ? JSON.stringify(corpo) : undefined
+    });
+  } catch (e) { throw new Error('Sem conexão com o servidor. Confira a rede e tente de novo.'); }
+  if (r.status === 401) { Auth.sair(); throw new Error('Sessão expirada. Entre novamente.'); }
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Erro ao falar com o servidor.'); }
+  return r.status === 204 ? null : r.json();
+}
+const lerLocal = k => { try { const a = JSON.parse(localStorage.getItem(k)); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+function salvarDemo() { try { localStorage.setItem(lsKey(), JSON.stringify(S.items)); } catch (e) { } }
+
 async function carregar() {
   try { S.cats = await getJSON('data/categorias.json'); } catch (e) { S.cats = CATS_FALLBACK; }
   try { S.cfg = await getJSON('data/config.json'); } catch (e) { }
-  let guardado = null;
-  try { guardado = JSON.parse(localStorage.getItem(lsKey())); } catch (e) { }
-  if (Array.isArray(guardado)) { S.items = guardado; return; }
 
   if (Auth.isDemo()) {                                   // modo "Conhecer o app": dados de exemplo
+    const guardado = lerLocal(lsKey());
+    if (guardado.length) { S.items = guardado; return; }
     try { S.items = await getJSON('data/lancamentos.json'); } catch (e) { S.items = Array.isArray(window.GC_SEED) ? window.GC_SEED.map(x => ({ ...x })) : []; }
-    salvar(); return;
+    salvarDemo(); return;
   }
 
-  // usuário real: migra UMA vez os dados da chave antiga (só se ainda existirem) e apaga a chave antiga,
-  // para que nenhum outro usuário herde esses lançamentos
-  try { guardado = JSON.parse(localStorage.getItem(LS_BASE)); } catch (e) { }
-  if (Array.isArray(guardado)) {
-    S.items = guardado; salvar();
-    try { localStorage.removeItem(LS_BASE); } catch (e) { }
-    return;
-  }
-  S.items = [];                                          // conta nova começa vazia
-  salvar();
+  try {
+    S.items = await api('GET', API);
+    // migração única: lançamentos que ficaram só no navegador vão para a conta (INSERT IGNORE: não duplica)
+    const mapa = new Map();
+    [...lerLocal(lsKey()), ...lerLocal(LS_BASE)].forEach(i => i && i.id && mapa.set(i.id, i));
+    if (mapa.size) {
+      S.items = await api('POST', API + '/importar', [...mapa.values()]);
+      try { localStorage.removeItem(lsKey()); localStorage.removeItem(LS_BASE); } catch (e) { }
+      toast('Seus lançamentos antigos foram enviados para a sua conta.', 4000);
+    }
+  } catch (e) { S.items = []; toast(e.message, 5000); }
+}
+async function gravar(item, novo) {                      // lança erro se o servidor recusar
+  if (Auth.isDemo()) return;
+  await api(novo ? 'POST' : 'PUT', novo ? API : API + '/' + encodeURIComponent(item.id), item);
 }
 const doMes = () => S.items.filter(i => i.data.startsWith(S.mes))
   .sort((a, b) => b.data.localeCompare(a.data) || b.id.localeCompare(a.id));
@@ -87,9 +119,9 @@ const botoesAcao = i => `<button class="ib" data-go="#/editar/${esc(i.id)}" aria
     <button class="ib del" data-act="excluir" data-ficar data-id="${esc(i.id)}" aria-label="Excluir ${esc(i.descricao)}" title="Excluir"><span aria-hidden="true">🗑️</span><span class="tx">Excluir</span></button>`;
 function linha(i, mostrarData) {
   const c = cat(i.categoria);
-  const sub = i.tipo === 'entrada' ? 'Entrada' : (c ? c.nome : 'Outros');
+  const sub = i.tipo === 'entrada' ? 'Entrada' : (c ? esc(c.nome) : 'Outros');
   return `<div class="rw"><button class="row" data-go="#/editar/${esc(i.id)}">
-    <span class="ico" aria-hidden="true">${i.tipo === 'entrada' ? '💰' : (c ? c.icone : '📦')}</span>
+    <span class="ico" aria-hidden="true">${i.tipo === 'entrada' ? '💰' : (c ? esc(c.icone) : '📦')}</span>
     <span class="t"><b>${esc(i.descricao)}</b><small>${sub}${mostrarData ? ' · ' + diaCurto(i.data) : ''}</small></span>
     <span class="amt ${i.tipo === 'entrada' ? 'in' : ''}">${i.tipo === 'entrada' ? '+' : '−'} ${brl(i.centavos)}</span></button>
     <div class="acts">${botoesAcao(i)}</div></div>`;
@@ -105,7 +137,7 @@ function rodape() {
 }
 const botaoNovo = `<button class="btn" data-go="#/novo">+ Novo lançamento</button>`;
 
-/* ---------- telas ---------- */
+/* ---------- telas (celular / tablet) ---------- */
 function telaResumo() {
   const lista = doMes(), t = totais(lista);
   const porCat = {};
@@ -119,12 +151,16 @@ function telaResumo() {
     <section class="duo">
       <div class="card"><div class="lbl">Entradas</div><div class="val">+ ${brl(t.e)}</div></div>
       <div class="card"><div class="lbl">Saídas</div><div class="val">− ${brl(t.s)}</div></div></section>
+    ${ex('atalhos')}
     ${topo.length ? `<section class="card"><b>Para onde foi</b><div class="bars">${topo.map(([id, v]) =>
     `<div class="bar"><span>${esc(cat(id)?.nome || 'Outros')}</span><span><i style="width:${Math.max(4, v / max * 100)}%"></i></span><span>${brl(v)}</span></div>`).join('')}</div></section>` : ''}
+    ${ex('resumoMobile')}
     <div class="sec"><h2>Últimos lançamentos</h2><button class="link" data-go="#/lista">Ver todos</button></div>
     ${lista.length ? `<section class="card list">${lista.slice(0, 4).map(i => linha(i, true)).join('')}</section>`
       : `<div class="empty">Toque em “Novo lançamento” para registrar sua primeira entrada ou saída.</div>`}
-    <div class="grow"></div><button class="btn alt" data-go="#/relatorio">🖨️ Imprimir relatório</button>${botaoNovo}`;
+    <div class="grow"></div>
+    <button class="btn alt" data-href="/notas.html">🧾 Emitir nota</button>
+    <button class="btn alt" data-go="#/relatorio">🖨️ Imprimir relatório</button>${botaoNovo}`;
 }
 
 function telaLista() {
@@ -155,12 +191,12 @@ function telaForm(id) {
       <button class="${tipo === 'saida' ? 'on' : ''}" data-tipo="saida">Saída</button></div>
     <div class="field" id="fValor"><label class="lbl" for="valor">Valor (R$)</label>
       <input id="valor" class="big" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${valor}">
-      <div class="msg" id="mValor"></div></div>
+      <div class="msg" id="mValor" role="alert"></div></div>
     <div class="field"><label class="lbl" for="desc">Descrição</label>
       <input id="desc" autocomplete="off" maxlength="60" value="${item ? esc(item.descricao) : ''}"></div>
     <div class="field" id="fCat" ${tipo === 'entrada' ? 'hidden' : ''}><span class="lbl">Categoria</span>
       <div class="chips" id="chips">${S.cats.map(c =>
-    `<button type="button" class="chip ${c.id === catSel ? 'on' : ''}" data-cat="${c.id}">${c.nome}</button>`).join('')}</div></div>
+    `<button type="button" class="chip ${c.id === catSel ? 'on' : ''}" data-cat="${esc(c.id)}">${esc(c.nome)}</button>`).join('')}</div></div>
     <div class="field"><label class="lbl" for="data">Data</label><input id="data" type="date" value="${data}"></div>
     <div class="grow"></div>
     <button class="btn" data-act="salvar" data-id="${item ? esc(item.id) : ''}">${item ? 'Salvar alterações' : 'Salvar'}</button>
@@ -168,50 +204,50 @@ function telaForm(id) {
 }
 
 /* ---------- ações ---------- */
-function salvarForm(id) {
+async function salvarForm(id, btn) {
+  if (btn.disabled) return;
   const tipo = document.querySelector('#tipo .on').dataset.tipo;
   const centavos = parseValor(document.getElementById('valor').value);
   const data = document.getElementById('data').value;
-  if (!centavos) {
+  const erro = (msg) => {
     document.getElementById('fValor').classList.add('err');
-    document.getElementById('mValor').textContent = 'Informe um valor maior que zero.';
-    document.getElementById('valor').focus(); return;
-  }
+    document.getElementById('mValor').textContent = msg;
+    document.getElementById('valor').focus();
+  };
+  if (!centavos) return erro('Informe um valor maior que zero.');
+  if (centavos > MAX_CENTAVOS) return erro('Valor alto demais.');
   if (!data) { document.getElementById('data').focus(); return; }
   const categoria = tipo === 'saida' ? (document.querySelector('#chips .on')?.dataset.cat || 'outros') : null;
   const descricao = document.getElementById('desc').value.trim()
-    || (tipo === 'entrada' ? 'Entrada' : cat(categoria).nome);          // registrar rápido: descrição é opcional
+    || (tipo === 'entrada' ? 'Entrada' : (cat(categoria)?.nome || 'Outros'));   // registrar rápido: descrição é opcional
   const novo = { id: id || 'l' + Date.now().toString(36), tipo, descricao, categoria, data, centavos };
+
+  btn.disabled = true;
+  try { await gravar(novo, !id); }
+  catch (e) { btn.disabled = false; toast(e.message, 4500); return; }
   if (id) S.items = S.items.map(i => i.id === id ? novo : i); else S.items.push(novo);
-  salvar(); S.mes = data.slice(0, 7); toast(id ? 'Alterações salvas' : 'Lançamento salvo');
+  if (Auth.isDemo()) salvarDemo();
+  const aviso = tipo === 'saida' ? ex('avisoOrcamento', categoria, data) : '';
+  S.mes = data.slice(0, 7); toast((id ? 'Alterações salvas' : 'Lançamento salvo') + aviso, aviso ? 4200 : 2200);
   location.hash = '#/';
 }
-function excluir(id, ficar) {
+async function excluir(id, ficar) {
   const it = S.items.find(i => i.id === id);
   if (!confirm('Excluir ' + (it ? '“' + it.descricao + '”' : 'este lançamento') + '? Essa ação não pode ser desfeita.')) return;
-  S.items = S.items.filter(i => i.id !== id); salvar(); toast('Lançamento excluído');
+  try { if (!Auth.isDemo()) await api('DELETE', API + '/' + encodeURIComponent(id)); }
+  catch (e) { toast(e.message, 4500); return; }
+  S.items = S.items.filter(i => i.id !== id);
+  if (Auth.isDemo()) salvarDemo();
+  toast('Lançamento excluído');
   if (ficar) { S.semRolar = true; render(); return; }          // botão da lista/tabela: permanece na tela
   if (location.hash === '#/lista') render(); else location.hash = '#/lista';
 }
-
-/* ---------- eventos e rotas ---------- */
-document.addEventListener('click', e => {
-  const go = e.target.closest('[data-go]'); if (go && !e.target.closest('[data-act="excluir"]')) { location.hash = go.dataset.go; return; }
-  const tp = e.target.closest('[data-tipo]');
-  if (tp) {
-    document.querySelectorAll('#tipo button').forEach(b => b.classList.toggle('on', b === tp));
-    document.getElementById('fCat').hidden = tp.dataset.tipo === 'entrada'; return;
-  }
-  const ch = e.target.closest('[data-cat]');
-  if (ch) { document.querySelectorAll('#chips .chip').forEach(b => b.classList.toggle('on', b === ch)); return; }
-  const a = e.target.closest('[data-act]'); if (!a) return;
-  if (a.dataset.act === 'mes') { S.mes = mudaMes(S.mes, +a.dataset.d); render(); }
-  if (a.dataset.act === 'filtro') { S.filtro = a.dataset.k; S.semRolar = true; render(); }
-  if (a.dataset.act === 'salvar') salvarForm(a.dataset.id);
-  if (a.dataset.act === 'excluir') excluir(a.dataset.id, a.hasAttribute('data-ficar'));
-});
-document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('#valor,#desc')) document.querySelector('[data-act=salvar]')?.click(); });
-window.addEventListener('hashchange', render);
+function sair() {
+  if (!confirm('Deseja sair do app?')) return;
+  if (Auth.isDemo()) { try { localStorage.removeItem(lsKey()); } catch (e) { } ex('limparDemo'); }  // modo teste não guarda nada
+  location.hash = '#/';      // o próximo login começa no Resumo
+  Auth.sair();               // apaga a sessão e recarrega -> tela de login
+}
 
 /* ---------- dashboard desktop (layout da imagem de referência) ---------- */
 const DESK = matchMedia('(min-width: 960px)');
@@ -283,7 +319,7 @@ function ilustracao() {
     <circle cx="250" cy="138" r="5" fill="var(--slate)"/></svg>`;
 }
 
-function telaDesk(rota, id) {
+function telaDesk(rota, id, exr) {
   const lista = doMes(), t = totais(lista);
   const porCat = {};
   lista.filter(i => i.tipo === 'saida').forEach(i => porCat[i.categoria || 'outros'] = (porCat[i.categoria || 'outros'] || 0) + i.centavos);
@@ -302,13 +338,18 @@ function telaDesk(rota, id) {
       .concat(pctRenda !== null ? [`Renda já gasta: ${pctRenda}%`] : [])
       .concat(topCat ? [`Maior categoria: ${esc(cat(topCat.id)?.nome || 'Outros')} (${Math.round(topCat.v / t.s * 100)}% das saídas)`] : []);
   const abas = [['todos', 'Todos'], ['entradas', 'Entradas'], ['saidas', 'Saídas']];
-  const nav = (r, ic, n) => `<button class="nav ${rota === r ? 'on' : ''}" data-go="#/${r}"><span aria-hidden="true">${ic}</span>${n}</button>`;
+  const rn = rota === 'conta' || rota === 'conta-nova' ? 'contas' : rota;
+  const nav = (r, ic, n, extra = '') => `<button class="nav ${rn === r ? 'on' : ''}" data-go="#/${r}"><span aria-hidden="true">${ic}</span>${n}${extra}</button>`;
   const side = `<nav class="side"><div class="brand"><i class="logo" aria-hidden="true"></i><span>Gerenciador<br>de Custos</span></div>
-    ${nav('', '📊', 'Resumo')}${nav('lista', '🧾', 'Lançamentos')}${nav('relatorio', '🖨️', 'Imprimir relatório')}
+    ${nav('', '📊', 'Resumo')}${nav('lista', '🧾', 'Lançamentos')}${nav('contas', '🔁', 'Contas a pagar', ex('badge'))}${nav('orcamento', '🎯', 'Orçamento')}${nav('backup', '💾', 'Backup')}
+    <button class="nav" data-href="/notas.html"><span aria-hidden="true">📝</span>Emitir nota</button>
+    ${nav('relatorio', '🖨️', 'Imprimir relatório')}
     <div class="grow"></div>
     <button class="nav sair" data-act="sair"><span aria-hidden="true">🚪</span>Sair</button>
-    <small class="lbl">Dados salvos neste navegador</small></nav>`;
+    <small class="lbl">${Auth.isDemo() ? 'Modo de teste: nada é salvo' : 'Dados salvos na sua conta'}</small></nav>`;
   if (rota === 'relatorio') return side + `<div class="main">${corpoRelatorio()}${rodape()}</div>`;
+  if (exr) return side + `<div class="main">${ex('topo', exr, true)}${exr.html}${rodape()}</div>` +
+    (exr.drawer ? `<div class="scrim" data-go="#/contas"></div><aside class="drawer" aria-label="Conta"><div class="dwr">${exr.drawer}</div></aside>` : '');
   const drawer = (rota === 'novo' || rota === 'editar')
     ? `<div class="scrim" data-go="#/"></div><aside class="drawer" aria-label="Lançamento"><div class="dwr">${telaForm(rota === 'editar' ? id : undefined)}</div></aside>` : '';
   return `${side}
@@ -359,6 +400,7 @@ function telaDesk(rota, id) {
         <figure>${gauge(pct)}<figcaption>Renda gasta</figcaption></figure>
         <figure>${gauge(sobra, 'da renda sobrou')}<figcaption>Sobra do mês</figcaption></figure></div></section>
 
+      ${ex('cardsDesk')}
       <section class="card w12" id="tabela"><div class="sec"><h2>Lançamentos</h2>
         <div class="seg sm" role="tablist">${abas.map(([k, n]) =>
         `<button role="tab" class="${S.filtro === k ? 'on' : ''}" aria-selected="${S.filtro === k}" data-act="filtro" data-k="${k}">${n}</button>`).join('')}</div></div>
@@ -452,19 +494,12 @@ function corpoRelatorio() {
 function telaRelatorio() {
   return `<header class="top no-print"><button class="sq" data-go="#/" aria-label="Voltar">&lt;</button><span></span><span></span></header>` + corpoRelatorio();
 }
-document.addEventListener('click', e => {
-  const a = e.target.closest('[data-act]'); if (!a) return;
-  if (a.dataset.act === 'per') { S.rel.per = a.dataset.k; render(); }
-  if (a.dataset.act === 'refmov') { S.rel.ref = moverRef(S.rel.per, S.rel.ref, +a.dataset.d); render(); }
-  if (a.dataset.act === 'imprimir') {
-    const [i] = intervalo(S.rel.per, S.rel.ref), antes = document.title;
-    document.title = 'Relatorio-' + S.rel.per + '-' + i;              // nome sugerido ao salvar em PDF
-    window.addEventListener('afterprint', () => document.title = antes, { once: true });
-    window.print();
-  }
-});
-document.addEventListener('change', e => { if (e.target.id === 'relData' && e.target.value) { S.rel.ref = e.target.value; render(); } });
-
+function imprimir() {
+  const [i] = intervalo(S.rel.per, S.rel.ref), antes = document.title;
+  document.title = 'Relatorio-' + S.rel.per + '-' + i;              // nome sugerido ao salvar em PDF
+  window.addEventListener('afterprint', () => document.title = antes, { once: true });
+  window.print();
+}
 
 /* ---------- PDF (gerador próprio, sem bibliotecas, funciona offline) ---------- */
 const HW = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278].concat(Array(10).fill(556),
@@ -563,8 +598,7 @@ function pdfRelatorio() {
     `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return { bytes: Uint8Array.from(pdf, c => c.charCodeAt(0)), nome: `Relatorio-${per}-${ini}.pdf` };
 }
-document.addEventListener('click', e => {
-  if (!e.target.closest('[data-act="pdf"]')) return;
+function baixarPdf() {
   try {
     const { bytes, nome } = pdfRelatorio();
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
@@ -572,39 +606,77 @@ document.addEventListener('click', e => {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
     toast('PDF salvo em Downloads');
   } catch (err) { console.error(err); toast('Não foi possível gerar o PDF'); }
-});
-function render(){
-  if(!Auth.sessao()) return;   // não desenha o app por cima da tela de login
-  const [ , rota, id] = (location.hash || '#/').slice(1).split('/');
+}
+
+/* ---------- desenho da tela ---------- */
+function render() {
+  if (!Auth.sessao()) return;   // não desenha o app por cima da tela de login
+  const [, rota, id] = (location.hash || '#/').slice(1).split('/');
   const manter = S.semRolar; S.semRolar = false;
   document.body.classList.toggle('desk', DESK.matches);
-  if(DESK.matches){
-    $app.innerHTML = telaDesk(rota || '', id);
-    if(rota==='novo' || rota==='editar') document.getElementById('valor')?.focus();
-    else if(rota==='lista') document.getElementById('tabela')?.scrollIntoView();
-    else if(!manter) window.scrollTo(0,0);
+  const exr = exTela(rota, id, DESK.matches);
+  if (DESK.matches) {
+    $app.innerHTML = telaDesk(rota || '', id, exr);
+    if (rota === 'novo' || rota === 'editar') document.getElementById('valor')?.focus();
+    else if (rota === 'conta-nova' || rota === 'conta') document.getElementById('cValor')?.focus();
+    else if (rota === 'lista') document.getElementById('tabela')?.scrollIntoView();
+    else if (!manter) window.scrollTo(0, 0);
     return;
   }
-  $app.innerHTML = (rota==='lista' ? telaLista() : rota==='relatorio' ? telaRelatorio() : rota==='novo' ? telaForm() : rota==='editar' ? telaForm(id) : telaResumo()) + ((rota==='novo' || rota==='editar') ? '' : rodape());
-  if(rota==='novo') document.getElementById('valor').focus();
-  if(!manter) window.scrollTo(0,0);
+  if (exr) {
+    $app.innerHTML = ex('topo', exr, false) + exr.html + (exr.cheio ? '' : rodape());
+    if (rota === 'conta-nova' || rota === 'conta') document.getElementById('cValor')?.focus();
+    if (!manter) window.scrollTo(0, 0);
+    return;
+  }
+  const form = rota === 'novo' || rota === 'editar';
+  $app.innerHTML = (rota === 'lista' ? telaLista() : rota === 'relatorio' ? telaRelatorio() : rota === 'novo' ? telaForm()
+    : rota === 'editar' ? telaForm(id) : telaResumo()) + (form ? '' : rodape());
+  if (rota === 'novo') document.getElementById('valor')?.focus();
+  if (!manter) window.scrollTo(0, 0);
 }
-  document.addEventListener('input', e => {
-    if (e.target.id !== 'busca') return;
-    S.busca = e.target.value; S.semRolar = true;
-    const pos = e.target.selectionStart; render();
-    const el = document.getElementById('busca'); if (el) { el.focus(); el.setSelectionRange(pos, pos); }
-  });
 
-/* ---------- sair (logout) ---------- */
-function sair() {
-  if (!confirm('Deseja sair do app?')) return;
-  if (Auth.isDemo()) { try { localStorage.removeItem(lsKey()); } catch (e) { } }  // modo teste não guarda nada
-  location.hash = '#/';      // o próximo login começa no Resumo
-  Auth.sair();               // apaga a sessão e recarrega -> tela de login
-}
+/* ---------- eventos (um único ponto de entrada) ---------- */
+const ACOES = {
+  mes: a => { S.mes = mudaMes(S.mes, +a.dataset.d); render(); },
+  filtro: a => { S.filtro = a.dataset.k; S.semRolar = true; render(); },
+  salvar: a => salvarForm(a.dataset.id, a),
+  excluir: a => excluir(a.dataset.id, a.hasAttribute('data-ficar')),
+  per: a => { S.rel.per = a.dataset.k; render(); },
+  refmov: a => { S.rel.ref = moverRef(S.rel.per, S.rel.ref, +a.dataset.d); render(); },
+  imprimir: imprimir,
+  pdf: baixarPdf,
+  sair: sair
+};
 document.addEventListener('click', e => {
-  if (e.target.closest('[data-act="sair"]')) sair();
+  const a = e.target.closest('[data-act]');
+  if (a && ACOES[a.dataset.act]) { ACOES[a.dataset.act](a); return; }
+  const tp = e.target.closest('[data-tipo]');
+  if (tp) {
+    document.querySelectorAll('#tipo button').forEach(b => b.classList.toggle('on', b === tp));
+    document.getElementById('fCat').hidden = tp.dataset.tipo === 'entrada'; return;
+  }
+  const ch = e.target.closest('[data-cat]');
+  if (ch) { document.querySelectorAll('#chips .chip').forEach(b => b.classList.toggle('on', b === ch)); return; }
+  const hr = e.target.closest('[data-href]');
+  if (hr) { location.href = hr.dataset.href; return; }
+  const go = e.target.closest('[data-go]');
+  if (go) location.hash = go.dataset.go;
 });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.matches('#valor,#desc')) document.querySelector('[data-act=salvar]')?.click();
+  else if (e.target.matches('tr[data-go]')) location.hash = e.target.dataset.go;
+});
+document.addEventListener('change', e => { if (e.target.id === 'relData' && e.target.value) { S.rel.ref = e.target.value; render(); } });
+document.addEventListener('input', e => {
+  if (e.target.id !== 'busca') return;
+  S.busca = e.target.value; S.semRolar = true;
+  const pos = e.target.selectionStart; render();
+  const el = document.getElementById('busca'); if (el) { el.focus(); el.setSelectionRange(pos, pos); }
+});
+window.addEventListener('hashchange', render);
 
-Auth.init(() => carregar().then(render));
+Auth.init(() => carregar()
+  .then(() => { try { if (typeof Extras !== 'undefined') Extras.iniciar(); } catch (e) { console.error('Extras.iniciar', e); } })
+  .then(render));

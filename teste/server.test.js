@@ -40,7 +40,7 @@ describe('Testes de Validação do Back-end', () => {
 });
 // Simulação das funções de controle de tentativas de login do server.js
 const falhas = new Map();
-const bloqueado = k => { const f = falhas.get(k); return f && f.n >= 8 && Date.now() < f.ate; };
+const bloqueado = k => { const f = falhas.get(k); return !!(f && f.n >= 8 && Date.now() < f.ate); };
 const falhou = k => { const f = falhas.get(k) || { n: 0 }; f.n++; f.ate = Date.now() + 15 * 60e3; falhas.set(k, f); };
 
 describe('Testes de Segurança e Bloqueio de Login (Back-end)', () => {

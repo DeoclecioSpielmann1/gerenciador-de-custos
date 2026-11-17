@@ -4,7 +4,8 @@
   'use strict';
   const K_SESSAO = 'gc_sessao';          // cópia local só para o app.js saber nome/e-mail/demo
   const STORE = localStorage;
-  const NA_LOGIN = location.pathname.replace(/\/+$/, '') === '/login';
+  // /login (servidor) ou login.html aberto direto: em ambos desenha a tela de entrada
+  const NA_LOGIN = /\/login(\.html)?$/.test(location.pathname.replace(/\/+$/, ''));
   const $ = (s, r = document) => r.querySelector(s);
 
   /* ---------- validações (o servidor valida de novo) ---------- */
@@ -64,7 +65,7 @@
         body: JSON.stringify(corpo || {})
       });
     } catch (e) {
-      return { ok: false, status: 0, dados: { erro: 'Sem conexão com o servidor. Confira a rede e tente de novo.' } };
+      return { ok: false, status: 0, dados: { erro: 'Sem conexão com o servidor. Abra o app pelo endereço do servidor (npm start) e confira a rede.' } };
     }
     const dados = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, dados };
@@ -93,11 +94,11 @@
           <p class="auth-sub">${cad ? 'Leva menos de um minuto.' : 'Use o e-mail e a senha do seu cadastro.'}</p>
           <form id="authForm" novalidate>
             ${cad ? campo('aNome', 'Nome completo',
-              '<input id="aNome" name="nome" type="text" autocomplete="name" maxlength="80" aria-describedby="e-aNome">') : ''}
+      '<input id="aNome" name="nome" type="text" autocomplete="name" maxlength="80" aria-describedby="e-aNome">') : ''}
             ${campo('aEmail', 'E-mail',
-              '<input id="aEmail" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" maxlength="120" aria-describedby="e-aEmail">')}
+        '<input id="aEmail" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" maxlength="120" aria-describedby="e-aEmail">')}
             ${cad ? campo('aTel', 'Telefone',
-              '<input id="aTel" name="telefone" type="tel" autocomplete="tel-national" inputmode="numeric" placeholder="(49) 99999-9999" aria-describedby="e-aTel">') : ''}
+          '<input id="aTel" name="telefone" type="tel" autocomplete="tel-national" inputmode="numeric" placeholder="(49) 99999-9999" aria-describedby="e-aTel">') : ''}
             ${campo('aSenha', 'Senha', `
               <div class="auth-senha">
                 <input id="aSenha" name="senha" type="password" maxlength="72"
@@ -220,7 +221,11 @@
     },
     sessao: lerSessao,
     isDemo: () => !!(lerSessao() || {}).demo,
-    chave: base => (Auth.isDemo() ? 'demo_' + base : base),
+    chave: base => {
+      const s = lerSessao() || {};
+      if (s.demo) return 'demo_' + base;
+      return s.email ? base + '.' + s.email : base;
+    },
     async sair() {
       try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) { }
       limparSessao();
