@@ -1,11 +1,13 @@
 // Iniciar:  npm install   e depois   npm start
 // No PC:      http://localhost:3000
 // No celular: use o endereço "Celular" que aparece no terminal (mesmo Wi-Fi do PC)
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const os = require('os');
 const path = require('path');
 
@@ -45,6 +47,63 @@ app.use(session({
 
 const pool = mysql.createPool({ ...DB, waitForConnections: true, connectionLimit: 5 });
 const HASH_FALSO = bcrypt.hashSync('senha-falsa', 12);   // iguala o tempo de resposta quando o e-mail não existe
+const resetSolicitacoes = new Map();
+const limiteReset = (ip, agora = Date.now()) => {
+  const atual = resetSolicitacoes.get(ip);
+  if (!atual || agora >= atual.ate) {
+    resetSolicitacoes.set(ip, { n: 1, ate: agora + 15 * 60e3 });
+    return false;
+  }
+  atual.n++;
+  return atual.n > 5;
+};
+const configuracaoEmail = (env = process.env) => {
+  const outlookOAuth2 = env.SMTP_AUTH === 'oauth2';
+  const gmailOAuth2 = env.SMTP_AUTH === 'gmail-oauth2';
+  const oauth2 = outlookOAuth2 || gmailOAuth2;
+  const host = outlookOAuth2 ? 'smtp-mail.outlook.com' :
+    gmailOAuth2 ? 'smtp.gmail.com' : env.SMTP_HOST;
+  const port = oauth2 ? 587 : +(env.SMTP_PORT || 587);
+  const from = env.SMTP_FROM || env.SMTP_USER;
+  const baseURL = env.APP_BASE_URL;
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !from || !baseURL) return null;
+  if (outlookOAuth2) {
+    if (!env.SMTP_USER || !env.OUTLOOK_CLIENT_ID || !env.OUTLOOK_REFRESH_TOKEN) return null;
+  } else if (gmailOAuth2) {
+    if (!env.SMTP_USER || !env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) return null;
+  } else if ((env.SMTP_AUTH && env.SMTP_AUTH !== 'password') ||
+    (!!env.SMTP_USER !== !!env.SMTP_PASS)) return null;
+  let url;
+  try { url = new URL(baseURL); } catch (e) { return null; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+  return {
+    from,
+    baseURL: url.origin,
+    transporter: nodemailer.createTransport({
+      host, port,
+      secure: oauth2 ? false : env.SMTP_SECURE === '1' || port === 465,
+      ...(oauth2 ? {
+        requireTLS: true,
+        auth: {
+          type: 'OAuth2',
+          user: env.SMTP_USER,
+          ...(outlookOAuth2 ? {
+            clientId: env.OUTLOOK_CLIENT_ID,
+            refreshToken: env.OUTLOOK_REFRESH_TOKEN,
+            accessUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token',
+            customParams: { scope: 'https://outlook.office.com/SMTP.Send offline_access' }
+          } : {
+            clientId: env.GMAIL_CLIENT_ID,
+            clientSecret: env.GMAIL_CLIENT_SECRET,
+            refreshToken: env.GMAIL_REFRESH_TOKEN,
+            accessUrl: 'https://oauth2.googleapis.com/token'
+          })
+        }
+      } : env.SMTP_USER ? { auth: { user: env.SMTP_USER, pass: env.SMTP_PASS } } : {})
+    })
+  };
+};
+const escaparHTML = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* ---------- validação (a do servidor é a que vale) ---------- */
 function validar(b, cadastro) {
@@ -69,7 +128,11 @@ function validar(b, cadastro) {
 const falhas = new Map();
 const bloqueado = k => { const f = falhas.get(k); return !!(f && f.n >= 8 && Date.now() < f.ate); };
 const falhou = k => { const f = falhas.get(k) || { n: 0 }; f.n++; f.ate = Date.now() + 15 * 60e3; falhas.set(k, f); };
-setInterval(() => { for (const [k, f] of falhas) if (Date.now() > f.ate) falhas.delete(k); }, 60e3).unref();
+setInterval(() => {
+  const agora = Date.now();
+  for (const [k, f] of falhas) if (agora > f.ate) falhas.delete(k);
+  for (const [k, f] of resetSolicitacoes) if (agora > f.ate) resetSolicitacoes.delete(k);
+}, 60e3).unref();
 
 /* ---------- sessão ---------- */
 const regenerar = req => new Promise((ok, no) => req.session.regenerate(e => e ? no(e) : ok()));
@@ -93,7 +156,7 @@ function exigir(req, res, next) {
 
 /* ---------- rotas públicas ---------- */
 app.get('/login', (req, res) => {
-  if (req.session.uid && Date.now() - req.session.ultimo < IDLE) return res.redirect('/');
+  if (!req.query.redefinir && req.session.uid && Date.now() - req.session.ultimo < IDLE) return res.redirect('/');
   res.set('Cache-Control', 'no-store').sendFile(path.join(PUBLICO, 'login.html'));
 });
 app.use(express.static(PUBLICO, { index: false }));
@@ -133,6 +196,78 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.post('/api/recuperar-senha', async (req, res) => {
+  const email = String(req.body && req.body.email || '').trim().toLowerCase();
+  if (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
+    return res.status(422).json({ erro: 'Informe um e-mail válido.' });
+  if (limiteReset(req.ip)) return res.status(429).json({ erro: 'Muitas solicitações. Aguarde 15 minutos e tente novamente.' });
+  const mail = configuracaoEmail();
+  if (!mail) return res.status(503).json({ erro: 'Recuperação temporariamente indisponível. Configure o SMTP/OAuth2 e APP_BASE_URL no servidor.' });
+  try {
+    const [[usuario]] = await pool.execute('SELECT id, nome FROM usuarios WHERE email = ?', [email]);
+    if (usuario) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const hash = crypto.createHash('sha256').update(token).digest('hex');
+      const link = mail.baseURL + '/login?redefinir#token=' + token;
+      await pool.execute('DELETE FROM tokens_recuperacao_senha WHERE usuario_id = ?', [usuario.id]);
+      await pool.execute(
+        'INSERT INTO tokens_recuperacao_senha (usuario_id, token_hash, expira_em) VALUES (?, ?, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 30 MINUTE))',
+        [usuario.id, hash]);
+      try {
+        await mail.transporter.sendMail({
+          from: mail.from,
+          to: email,
+          subject: 'Redefinição de senha — Gerenciador de Custos',
+          text: `Olá, ${usuario.nome}.\n\nPara criar uma nova senha, acesse este link (válido por 30 minutos e de uso único):\n${link}\n\nSe você não solicitou a redefinição, ignore esta mensagem.`,
+          html: `<p>Olá, ${escaparHTML(usuario.nome)}.</p><p>Para criar uma nova senha, acesse o link abaixo. Ele expira em 30 minutos e só pode ser usado uma vez.</p><p><a href="${link}">Redefinir minha senha</a></p><p>Se você não solicitou a redefinição, ignore esta mensagem.</p>`
+        });
+      } catch (e) {
+        await pool.execute('DELETE FROM tokens_recuperacao_senha WHERE usuario_id = ? AND token_hash = ?', [usuario.id, hash]);
+        console.error('Falha ao enviar e-mail de recuperação:', e.code || e.message);
+      }
+    }
+    res.json({ mensagem: 'Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha.' });
+  } catch (e) {
+    console.error('Falha ao solicitar recuperação de senha:', e.code || e.message);
+    res.status(500).json({ erro: 'Não foi possível solicitar a recuperação agora. Tente novamente.' });
+  }
+});
+
+app.post('/api/redefinir-senha', async (req, res) => {
+  const token = String(req.body && req.body.token || '');
+  const senha = String(req.body && req.body.senha || '');
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({ erro: 'Link inválido ou expirado. Solicite uma nova recuperação.' });
+  if (senha.length < 8 || Buffer.byteLength(senha) > 72)
+    return res.status(422).json({ erro: 'A senha deve ter ao menos 8 caracteres e no máximo 72 bytes.' });
+  let conexao;
+  try {
+    const senhaHash = await bcrypt.hash(senha, 12);
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    conexao = await pool.getConnection();
+    await conexao.beginTransaction();
+    const [[registro]] = await conexao.execute(
+      'SELECT usuario_id FROM tokens_recuperacao_senha WHERE token_hash = ? AND expira_em > CURRENT_TIMESTAMP FOR UPDATE',
+      [tokenHash]);
+    if (!registro) {
+      await conexao.rollback();
+      return res.status(400).json({ erro: 'Link inválido ou expirado. Solicite uma nova recuperação.' });
+    }
+    await conexao.execute('UPDATE usuarios SET senha = ? WHERE id = ?', [senhaHash, registro.usuario_id]);
+    await conexao.execute('DELETE FROM tokens_recuperacao_senha WHERE usuario_id = ?', [registro.usuario_id]);
+    await conexao.commit();
+    res.json({ mensagem: 'Senha redefinida. Entre com sua nova senha.' });
+  } catch (e) {
+    if (conexao) {
+      try { await conexao.rollback(); }
+      catch (rollbackError) { console.error('Falha ao reverter redefinição de senha:', rollbackError.code || rollbackError.message); }
+    }
+    console.error('Falha ao redefinir senha:', e.code || e.message);
+    res.status(500).json({ erro: 'Não foi possível redefinir a senha agora. Tente novamente.' });
+  } finally {
+    if (conexao) conexao.release();
+  }
+});
+
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => { res.clearCookie('gc.sid'); res.status(204).end(); });
 });
@@ -152,6 +287,13 @@ app.use(exigir);
 app.get('/api/me', (req, res) => res.json({
   id: req.session.uid, nome: req.session.nome, email: req.session.email, demo: !!req.session.demo
 }));
+
+/* módulos funcionais do painel: entregues somente a usuários autenticados */
+for (const nome of ['Dados.js', 'Orcamento.js', 'Contas.js', 'Backup.js', 'Pwa.js']) {
+  app.get('/' + nome, (req, res) => res.sendFile(path.join(__dirname, nome), {
+    headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' }
+  }));
+}
 
 /* o visitante do modo de teste não grava nem lê nada do banco */
 app.use('/api/lancamentos', (req, res, next) =>
@@ -231,12 +373,15 @@ pool.query('SELECT 1')
   .then(() => pool.query(`SELECT
       (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'senha') AS senha,
       (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lancamentos') AS lanc,
-      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notas') AS notas`))
+      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notas') AS notas,
+      (SELECT COUNT(*) FROM information_schema.TABLES  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tokens_recuperacao_senha') AS tokens_reset`))
   .then(([[r]]) => {
     if (!+r.senha || !+r.lanc)
       console.error('ATENÇÃO - faltam a coluna usuarios.senha e/ou a tabela lancamentos. Rode o schema_mysql.sql no DBeaver (Alt+X).');
     if (!+r.notas)
       console.error('ATENÇÃO - falta a tabela notas (emissor de notas). Rode o schema_notas.sql no DBeaver (Alt+X).');
+    if (!+r.tokens_reset)
+      console.error('ATENÇÃO - falta a tabela tokens_recuperacao_senha. Rode schema_mysql.sql no DBeaver (Alt+X).');
   })
   .catch(e => {
     console.error('ATENÇÃO - sem conexão com o MySQL:', e.code, e.message);
@@ -253,4 +398,4 @@ if (require.main === module) {
     console.log('');
   });
 }
-module.exports = { app, validar }; // Exporta para os testes
+module.exports = { app, validar, configuracaoEmail }; // Exporta para os testes

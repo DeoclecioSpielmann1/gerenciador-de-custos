@@ -104,7 +104,7 @@
                 <input id="aSenha" name="senha" type="password" maxlength="72"
                   autocomplete="${cad ? 'new-password' : 'current-password'}" aria-describedby="e-aSenha${cad ? ' dSenha' : ''}">
                 <button type="button" class="auth-olho" aria-pressed="false" aria-controls="aSenha">Mostrar</button>
-              </div>${cad ? '<small id="dSenha" class="auth-dica">Mínimo de 8 caracteres.</small>' : ''}`)}
+                </div>${cad ? '<small id="dSenha" class="auth-dica">Mínimo de 8 caracteres.</small>' : '<button type="button" class="auth-link" id="aRecuperar">Esqueci minha senha</button>'}`)}
             <p id="eGeral" class="auth-erro auth-erro-geral" role="alert"></p>
             <button class="auth-btn auth-btn-primario" type="submit" id="aEnviar">${cad ? 'Criar conta' : 'Entrar'}</button>
           </form>
@@ -135,6 +135,7 @@
     app.querySelectorAll('[data-modo]').forEach(b => b.addEventListener('click', () => {
       if (b.dataset.modo !== modo) renderLogin(b.dataset.modo);
     }));
+    $('#aRecuperar', app)?.addEventListener('click', renderRecuperar);
 
     const olho = $('.auth-olho', app);
     olho.addEventListener('click', () => {
@@ -189,6 +190,91 @@
     (campos.nome || campos.email)[0].focus();
   }
 
+  function renderRecuperar() {
+    const app = document.getElementById('app');
+    app.innerHTML = `
+      <section class="auth"><div class="auth-card">
+        <div class="auth-marca"><span class="auth-logo" aria-hidden="true"></span><strong>Gerenciador de Custos</strong></div>
+        <h1>Recuperar senha</h1>
+        <p class="auth-sub">Informe o e-mail cadastrado. Se houver uma conta, enviaremos um link para redefinir a senha.</p>
+        <form id="recuperarForm" novalidate>
+          <div class="auth-campo"><label for="recEmail">E-mail</label>
+            <input id="recEmail" type="email" autocomplete="email" inputmode="email" maxlength="120" required>
+            <small id="recErro" class="auth-erro" role="alert"></small></div>
+          <p id="recGeral" class="auth-erro auth-erro-geral" role="status"></p>
+          <button class="auth-btn auth-btn-primario" type="submit" id="recEnviar">Enviar link</button>
+        </form>
+        <button class="auth-btn auth-btn-sec" type="button" id="recVoltar">Voltar para entrar</button>
+      </div></section>`;
+    const email = $('#recEmail', app), erro = $('#recErro', app), geral = $('#recGeral', app);
+    $('#recVoltar', app).addEventListener('click', () => renderLogin('entrar'));
+    $('#recuperarForm', app).addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const endereco = email.value.trim().toLowerCase();
+      const mensagem = V.email(endereco);
+      erro.textContent = mensagem;
+      email.classList.toggle('invalido', !!mensagem);
+      if (mensagem) { email.focus(); return; }
+      const btn = $('#recEnviar', app);
+      btn.disabled = true;
+      btn.textContent = 'Enviando…';
+      geral.textContent = '';
+      const r = await post('/api/recuperar-senha', { email: endereco });
+      btn.disabled = false;
+      btn.textContent = 'Enviar link';
+      if (r.ok) {
+        $('#recuperarForm', app).hidden = true;
+        geral.classList.remove('auth-erro');
+        geral.classList.add('auth-nota');
+        geral.textContent = 'Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha. Verifique também a caixa de spam.';
+        return;
+      }
+      geral.textContent = r.dados.erro || 'Não foi possível solicitar a recuperação. Tente novamente.';
+    });
+    email.focus();
+  }
+
+  function renderRedefinir(token) {
+    const app = document.getElementById('app');
+    app.innerHTML = `
+      <section class="auth"><div class="auth-card">
+        <div class="auth-marca"><span class="auth-logo" aria-hidden="true"></span><strong>Gerenciador de Custos</strong></div>
+        <h1>Crie uma nova senha</h1>
+        <p class="auth-sub">Use pelo menos 8 caracteres. O link expira após 30 minutos e só pode ser usado uma vez.</p>
+        <form id="novaSenhaForm" novalidate>
+          <div class="auth-campo"><label for="novaSenha">Nova senha</label>
+            <input id="novaSenha" type="password" maxlength="72" autocomplete="new-password">
+            <small id="novaSenhaErro" class="auth-erro" role="alert"></small></div>
+          <div class="auth-campo"><label for="confirmaSenha">Confirme a nova senha</label>
+            <input id="confirmaSenha" type="password" maxlength="72" autocomplete="new-password">
+            <small id="confirmaSenhaErro" class="auth-erro" role="alert"></small></div>
+          <p id="resetGeral" class="auth-erro auth-erro-geral" role="alert"></p>
+          <button class="auth-btn auth-btn-primario" type="submit" id="resetEnviar">Redefinir senha</button>
+        </form>
+        <button class="auth-btn auth-btn-sec" type="button" id="resetVoltar">Voltar para entrar</button>
+      </div></section>`;
+    const senha = $('#novaSenha', app), confirma = $('#confirmaSenha', app);
+    $('#resetVoltar', app).addEventListener('click', () => renderLogin('entrar'));
+    $('#novaSenhaForm', app).addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const msg = V.senha(senha.value, true);
+      $('#novaSenhaErro', app).textContent = msg;
+      $('#confirmaSenhaErro', app).textContent = senha.value === confirma.value ? '' : 'As senhas não coincidem.';
+      $('#resetGeral', app).textContent = '';
+      if (msg || senha.value !== confirma.value) { (msg ? senha : confirma).focus(); return; }
+      const btn = $('#resetEnviar', app);
+      btn.disabled = true;
+      btn.textContent = 'Salvando…';
+      const r = await post('/api/redefinir-senha', { token, senha: senha.value });
+      btn.disabled = false;
+      btn.textContent = 'Redefinir senha';
+      if (!r.ok) { $('#resetGeral', app).textContent = r.dados.erro || 'Não foi possível redefinir a senha.'; return; }
+      renderLogin('entrar');
+      $('#eGeral', app).textContent = 'Senha redefinida. Entre com sua nova senha.';
+    });
+    senha.focus();
+  }
+
   /* ---------- no app: confere a sessão do servidor ---------- */
   async function verificar() {
     let r = null;
@@ -237,6 +323,9 @@
 
   if (NA_LOGIN) {
     const abrir = () => renderLogin('entrar');
-    if (document.getElementById('app')) abrir(); else document.addEventListener('DOMContentLoaded', abrir);
+    const token = new URLSearchParams(location.hash.slice(1)).get('token');
+    if (token) history.replaceState(null, '', location.pathname);
+    const iniciar = () => token ? renderRedefinir(token) : abrir();
+    if (document.getElementById('app')) iniciar(); else document.addEventListener('DOMContentLoaded', iniciar);
   }
 })();

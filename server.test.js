@@ -1,4 +1,5 @@
-const { validar } = require('./server');
+const { validar, app, configuracaoEmail } = require('./server');
+const request = require('supertest');
 
 describe('Testes de Validação de Dados', () => {
   
@@ -98,5 +99,122 @@ describe('Testes do emissor de notas', () => {
       itens: [{ desc: 'Produto', qtd: 1, c: 1000 }]
     });
     expect(resultado.erro).toBe('Data inválida.');
+  });
+});
+
+describe('Recuperação de senha', () => {
+  test('rejeita e-mail inválido sem consultar o banco', async () => {
+    const resposta = await request(app).post('/api/recuperar-senha').send({ email: 'invalido' });
+    expect(resposta.status).toBe(422);
+  });
+
+  test('rejeita tokens malformados e senhas curtas', async () => {
+    const tokenInvalido = await request(app).post('/api/redefinir-senha').send({ token: 'abc', senha: 'senha-segura' });
+    expect(tokenInvalido.status).toBe(400);
+    const senhaCurta = await request(app).post('/api/redefinir-senha').send({ token: 'a'.repeat(64), senha: 'curta' });
+    expect(senhaCurta.status).toBe(422);
+  });
+});
+
+describe('Configuração do Outlook OAuth2', () => {
+  test('configura OAuth2 com SMTP AUTH oficial e exige TLS', () => {
+    const nodemailer = require('nodemailer');
+    const criarTransporte = jest.spyOn(nodemailer, 'createTransport').mockReturnValue({});
+    const email = configuracaoEmail({
+      SMTP_AUTH: 'oauth2',
+      SMTP_USER: 'conta@outlook.com',
+      OUTLOOK_CLIENT_ID: 'client-id',
+      OUTLOOK_REFRESH_TOKEN: 'refresh-token',
+      APP_BASE_URL: 'https://custos.example.com'
+    });
+
+    expect(email).not.toBeNull();
+    expect(criarTransporte).toHaveBeenCalledWith(expect.objectContaining({
+      host: 'smtp-mail.outlook.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: expect.objectContaining({
+        type: 'OAuth2',
+        user: 'conta@outlook.com',
+        clientId: 'client-id',
+        refreshToken: 'refresh-token',
+        accessUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token',
+        customParams: { scope: 'https://outlook.office.com/SMTP.Send offline_access' }
+      })
+    }));
+    criarTransporte.mockRestore();
+  });
+
+  test('não habilita OAuth2 sem o refresh token', () => {
+    expect(configuracaoEmail({
+      SMTP_AUTH: 'oauth2',
+      SMTP_USER: 'conta@outlook.com',
+      OUTLOOK_CLIENT_ID: 'client-id',
+      APP_BASE_URL: 'http://localhost:3000'
+    })).toBeNull();
+  });
+
+  test('preserva a autenticação SMTP tradicional', () => {
+    const nodemailer = require('nodemailer');
+    const criarTransporte = jest.spyOn(nodemailer, 'createTransport').mockReturnValue({});
+    const email = configuracaoEmail({
+      SMTP_HOST: 'smtp.example.com',
+      SMTP_PORT: '465',
+      SMTP_USER: 'conta@example.com',
+      SMTP_PASS: 'senha',
+      APP_BASE_URL: 'https://custos.example.com'
+    });
+
+    expect(email).not.toBeNull();
+    expect(criarTransporte).toHaveBeenCalledWith(expect.objectContaining({
+      host: 'smtp.example.com',
+      port: 465,
+      secure: true,
+      auth: { user: 'conta@example.com', pass: 'senha' }
+    }));
+    criarTransporte.mockRestore();
+  });
+});
+
+describe('Configuração do Gmail OAuth2', () => {
+  test('configura OAuth2 com SMTP Gmail e TLS obrigatório', () => {
+    const nodemailer = require('nodemailer');
+    const criarTransporte = jest.spyOn(nodemailer, 'createTransport').mockReturnValue({});
+    const email = configuracaoEmail({
+      SMTP_AUTH: 'gmail-oauth2',
+      SMTP_USER: 'conta@gmail.com',
+      GMAIL_CLIENT_ID: 'client-id',
+      GMAIL_CLIENT_SECRET: 'client-secret',
+      GMAIL_REFRESH_TOKEN: 'refresh-token',
+      APP_BASE_URL: 'https://custos.example.com'
+    });
+
+    expect(email).not.toBeNull();
+    expect(criarTransporte).toHaveBeenCalledWith(expect.objectContaining({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: {
+        type: 'OAuth2',
+        user: 'conta@gmail.com',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        refreshToken: 'refresh-token',
+        accessUrl: 'https://oauth2.googleapis.com/token'
+      }
+    }));
+    criarTransporte.mockRestore();
+  });
+
+  test('não habilita Gmail OAuth2 sem o refresh token', () => {
+    expect(configuracaoEmail({
+      SMTP_AUTH: 'gmail-oauth2',
+      SMTP_USER: 'conta@gmail.com',
+      GMAIL_CLIENT_ID: 'client-id',
+      GMAIL_CLIENT_SECRET: 'client-secret',
+      APP_BASE_URL: 'http://localhost:3000'
+    })).toBeNull();
   });
 });

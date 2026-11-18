@@ -7,10 +7,48 @@ CREATE TABLE IF NOT EXISTS usuarios (
   nome          VARCHAR(80)  NOT NULL,
   email         VARCHAR(120) NOT NULL,
   telefone      VARCHAR(11)  NOT NULL,
+  senha         VARCHAR(255) NULL,
   criado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+SET @senha_coluna = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'usuarios'
+    AND COLUMN_NAME = 'senha'
+);
+SET @adicionar_senha = IF(@senha_coluna = 0,
+  'ALTER TABLE usuarios ADD COLUMN senha VARCHAR(255) NULL AFTER telefone',
+  'SELECT 1');
+PREPARE adicionar_senha FROM @adicionar_senha;
+EXECUTE adicionar_senha;
+DEALLOCATE PREPARE adicionar_senha;
+
+SET @tipo_id_usuario = (
+  SELECT COLUMN_TYPE
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'usuarios'
+    AND COLUMN_NAME = 'id'
+);
+SET @criar_tokens_reset = CONCAT(
+  'CREATE TABLE IF NOT EXISTS tokens_recuperacao_senha (',
+  'usuario_id ', @tipo_id_usuario, ' NOT NULL,',
+  'token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,',
+  'expira_em DATETIME NOT NULL,',
+  'criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,',
+  'PRIMARY KEY (token_hash),',
+  'INDEX idx_tokens_recuperacao_usuario (usuario_id),',
+  'INDEX idx_tokens_recuperacao_expiracao (expira_em),',
+  'FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE',
+  ') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+);
+PREPARE criar_tokens_reset FROM @criar_tokens_reset;
+EXECUTE criar_tokens_reset;
+DEALLOCATE PREPARE criar_tokens_reset;
 
 -- Conferência
 SELECT * FROM usuarios;

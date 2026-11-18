@@ -13,7 +13,6 @@ const CATS_FALLBACK = [
   { id: 'transporte', nome: 'Transporte', icone: '🚌' }, { id: 'trabalho', nome: 'Trabalho', icone: '💻' },
   { id: 'lazer', nome: 'Lazer', icone: '🎬' }, { id: 'outros', nome: 'Outros', icone: '📦' }];
 const MAX_CENTAVOS = 99999999999;      // mesmo limite do servidor
-(() => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '/extras.css'; document.head.append(l); })();
 
 const S = { cats: [], items: [], mes: mesDe(new Date()), filtro: 'todos' };
 const $app = document.getElementById('app');
@@ -196,11 +195,52 @@ function telaForm(id) {
       <input id="desc" autocomplete="off" maxlength="60" value="${item ? esc(item.descricao) : ''}"></div>
     <div class="field" id="fCat" ${tipo === 'entrada' ? 'hidden' : ''}><span class="lbl">Categoria</span>
       <div class="chips" id="chips">${S.cats.map(c =>
-    `<button type="button" class="chip ${c.id === catSel ? 'on' : ''}" data-cat="${esc(c.id)}">${esc(c.nome)}</button>`).join('')}</div></div>
+    `<button type="button" class="chip ${c.id === catSel ? 'on' : ''}" data-cat="${esc(c.id)}">${esc(c.nome)}</button>`).join('')}
+        <button type="button" class="chip" data-act="nova-cat" data-container="chips">+ Categoria</button></div></div>
     <div class="field"><label class="lbl" for="data">Data</label><input id="data" type="date" value="${data}"></div>
     <div class="grow"></div>
     <button class="btn" data-act="salvar" data-id="${item ? esc(item.id) : ''}">${item ? 'Salvar alterações' : 'Salvar'}</button>
     ${item ? `<button class="btn ghost" data-act="excluir" data-id="${esc(item.id)}">Excluir lançamento</button>` : ''}`;
+}
+
+function novaCategoria(a) {
+  document.getElementById('categoriaDialog')?.remove();
+  const dialog = document.createElement('dialog');
+  dialog.id = 'categoriaDialog';
+  dialog.className = 'cat-dialog';
+  dialog.setAttribute('aria-labelledby', 'catDialogTitle');
+  dialog.innerHTML = `<form id="categoriaForm" novalidate>
+    <h2 id="catDialogTitle">Nova categoria</h2>
+    <div class="field"><label class="lbl" for="catNome">Nome da categoria</label>
+      <input id="catNome" maxlength="30" autocomplete="off" aria-describedby="catErro">
+      <small id="catErro" class="msg" role="alert"></small></div>
+    <div class="cat-actions"><button type="button" class="btn ghost" data-cat-cancel>Cancelar</button>
+      <button type="submit" class="btn">Adicionar</button></div>
+  </form>`;
+  document.body.append(dialog);
+  const fechar = () => { if (dialog.open) dialog.close(); dialog.remove(); };
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  dialog.querySelector('[data-cat-cancel]').addEventListener('click', fechar);
+  dialog.querySelector('#categoriaForm').addEventListener('submit', ev => {
+    ev.preventDefault();
+    try {
+      const c = Extras.adicionarCategoria(dialog.querySelector('#catNome').value);
+      const container = a.dataset.container && document.getElementById(a.dataset.container);
+      fechar();
+      if (container) {
+        const atributo = container.id === 'cchips' ? 'data-ccat' : 'data-cat';
+        container.querySelector('[data-act="nova-cat"]').insertAdjacentHTML('beforebegin',
+          `<button type="button" class="chip on" ${atributo}="${esc(c.id)}">${esc(c.nome)}</button>`);
+        container.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b.dataset[atributo === 'data-ccat' ? 'ccat' : 'cat'] === c.id));
+      } else {
+        S.semRolar = true;
+        render();
+      }
+      toast('Categoria adicionada');
+    } catch (e) { dialog.querySelector('#catErro').textContent = e.message || 'Não foi possível adicionar a categoria.'; }
+  });
+  dialog.showModal();
+  dialog.querySelector('#catNome').focus();
 }
 
 /* ---------- ações ---------- */
@@ -638,6 +678,7 @@ function render() {
 
 /* ---------- eventos (um único ponto de entrada) ---------- */
 const ACOES = {
+  'nova-cat': novaCategoria,
   mes: a => { S.mes = mudaMes(S.mes, +a.dataset.d); render(); },
   filtro: a => { S.filtro = a.dataset.k; S.semRolar = true; render(); },
   salvar: a => salvarForm(a.dataset.id, a),

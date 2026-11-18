@@ -3,7 +3,7 @@
    só arquivos estáticos (css, js, ícones), e nunca uma resposta que veio de redirecionamento
    (senão a tela de login poderia ficar salva no lugar do app.js). */
 const V = 'gc-v4';
-const ESTATICOS = ['/style.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const ESTATICOS = ['/style.css', '/manifest.webmanifest', '/icons/icon.svg'];
 const OFFLINE = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   '<title>Sem conexão</title><body style="font:16px system-ui,sans-serif;padding:32px;max-width:32rem;margin:auto">' +
   '<h1 style="font-weight:400">Sem conexão</h1><p>O Gerenciador de Custos precisa do servidor para abrir. ' +

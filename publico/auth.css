@@ -34,6 +34,8 @@
 .auth-olho{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:40px;padding:0 12px;
   border:0;border-radius:var(--r-s,7px);background:none;color:var(--pos,#2f6f70);font-weight:700;cursor:pointer}
 .auth-olho:focus-visible{outline:3px solid var(--pos,#2f6f70);outline-offset:0}
+.auth-link{align-self:flex-end;padding:2px 0;border:0;background:none;color:var(--pos,#2f6f70);
+  font-size:.9rem;font-weight:700;text-decoration:underline;cursor:pointer}
 
 .auth-btn{width:100%;min-height:52px;padding:14px;border-radius:var(--r-m,9px);font-weight:800;font-size:1.05rem;
   cursor:pointer;border:1.5px solid var(--btn,#44444d);transition:transform .15s,opacity .15s}

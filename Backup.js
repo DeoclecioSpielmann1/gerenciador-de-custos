@@ -29,7 +29,7 @@
 
   function exportarJSON() {
     const d = { app: 'gerenciador-de-custos', versao: 1, exportadoEm: new Date().toISOString(), usuario: (Auth.sessao() || {}).email || null,
-      dados: { lancamentos: S.items, orcamentos: S.orc, fixas: S.rec, contas: S.contas } };
+      dados: { lancamentos: S.items, orcamentos: S.orc, fixas: S.rec, contas: S.contas, categorias: Extras.categoriasPersonalizadas() } };
     baixar(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }), 'gc-backup-' + hojeISO() + '.json');
     Extras.marcarBackup(); toast('Backup salvo em Downloads'); S.semRolar = true; render();
   }
@@ -64,10 +64,12 @@
       const C = novos(d.contas, x => valOk(x) && dataOk(x.venc), x => ({ ...base(x), venc: x.venc, ...(idOk(x.recId) ? { recId: x.recId } : {}) }), S.contas);
       const F = novos(d.fixas, x => valOk(x) && Number.isInteger(x.dia) && x.dia >= 1 && x.dia <= 31 && /^\d{4}-\d{2}$/.test(x.inicio || ''),
         x => ({ ...base(x), dia: x.dia, inicio: x.inicio, gerados: Array.isArray(x.gerados) ? x.gerados.filter(m => /^\d{4}-\d{2}$/.test(m)) : [] }), S.rec);
+      const K = Extras.validarCategorias(d.categorias);
       const O = Object.entries(d.orcamentos && typeof d.orcamentos === 'object' ? d.orcamentos : {})
         .filter(([k, v]) => /^[\w-]{1,40}$/.test(k) && Number.isInteger(v) && v > 0 && v <= 99999999999 && !(k in S.orc));
-      if (!L.length && !C.length && !F.length && !O.length) { toast('Nada novo para importar.'); return; }
-      if (!confirm(`Importar ${L.length} lançamento(s), ${C.length} conta(s), ${F.length} conta(s) fixa(s) e ${O.length} limite(s)?\nOs dados atuais serão mantidos.`)) return;
+      if (!L.length && !C.length && !F.length && !O.length && !K.length) { toast('Nada novo para importar.'); return; }
+      if (!confirm(`Importar ${L.length} lançamento(s), ${C.length} conta(s), ${F.length} conta(s) fixa(s), ${O.length} limite(s) e ${K.length} categoria(s)?\nOs dados atuais serão mantidos.`)) return;
+      Extras.importarCategorias(K);
       if (L.length) {
         if (Auth.isDemo()) {
           S.items.push(...L);

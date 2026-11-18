@@ -52,7 +52,8 @@
       <div class="field"><label class="lbl" for="cDesc">Descrição</label>
         <input id="cDesc" autocomplete="off" maxlength="60" placeholder="Ex.: Aluguel, Internet, Salário" value="${c ? esc(c.descricao) : ''}"></div>
       <div class="field" id="cfCat" ${tipo === 'entrada' ? 'hidden' : ''}><span class="lbl">Categoria</span>
-        <div class="chips" id="cchips">${S.cats.map(k => `<button type="button" class="chip ${k.id === sel ? 'on' : ''}" data-ccat="${esc(k.id)}">${esc(k.nome)}</button>`).join('')}</div></div>
+        <div class="chips" id="cchips">${S.cats.map(k => `<button type="button" class="chip ${k.id === sel ? 'on' : ''}" data-ccat="${esc(k.id)}">${esc(k.nome)}</button>`).join('')}
+          <button type="button" class="chip" data-act="nova-cat" data-container="cchips">+ Categoria</button></div></div>
       <div class="field"><label class="lbl" for="cVenc">Vencimento</label><input id="cVenc" type="date" value="${c ? c.venc : hojeISO()}"></div>
       ${c ? (c.recId ? '<p class="lbl">🔁 Esta conta faz parte de uma conta fixa. A alteração vale só para este mês.</p>' : '')
           : '<label class="chk"><input type="checkbox" id="cRep"><span>🔁 Repetir todo mês neste dia</span></label>'}

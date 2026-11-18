@@ -31,7 +31,8 @@
           <input class="o-in" data-oc="${esc(c.id)}" inputmode="decimal" autocomplete="off" placeholder="Sem limite" aria-label="Limite mensal de ${esc(c.nome)} em reais" value="${l ? val(l) : ''}"></div>
           ${l ? barra(p2, 'Uso do limite de ' + c.nome) : ''}</li>`;
       }).join('');
-      return resumo + `<section class="card"><h2 class="ch">Limites por categoria</h2><ul class="orcl">${linhas}</ul>
+      return resumo + `<section class="card"><div class="sec"><h2 class="ch">Limites por categoria</h2>
+        <button type="button" class="link" data-act="nova-cat">+ Categoria</button></div><ul class="orcl">${linhas}</ul>
         <div class="rbtns"><button class="btn sm rbtn" data-act="salvar-orc">Salvar limites</button><button class="btn sm rbtn alt" data-act="sugerir-orc">Sugerir pela média</button></div>
         <p class="lbl rdica">O limite vale para todos os meses. Deixe em branco para não acompanhar a categoria.</p></section>`;
     },
