@@ -6,6 +6,7 @@
     "start": "node server.js",
     "setup:outlook": "node scripts/configurar-outlook.js",
     "setup:gmail": "node scripts/configurar-gmail.js",
+    "db:init": "node scripts/inicializar-banco.js",
     "test": "jest --detectOpenHandles --forceExit"
   },
   "dependencies": {

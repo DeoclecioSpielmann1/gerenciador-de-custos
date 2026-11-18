@@ -14,11 +14,11 @@ const path = require('path');
 /* ====== CONFIGURE AQUI (ou use variáveis de ambiente) ====== */
 const PORT = +(process.env.PORT || 3000);
 const DB = {
-  host: process.env.DB_HOST || 'localhost',
-  port: +(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASS || '',
-  database: process.env.DB_NAME || 'gerenciador_custos'
+  host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
+  port: +(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
+  user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
+  password: process.env.DB_PASS || process.env.MYSQLPASSWORD || '',
+  database: process.env.DB_NAME || process.env.MYSQLDATABASE || 'gerenciador_custos'
 };
 const INATIVIDADE_MIN = 30;   // minutos parado até pedir login de novo
 /* =========================================================== */
@@ -46,6 +46,15 @@ app.use(session({
 }));
 
 const pool = mysql.createPool({ ...DB, waitForConnections: true, connectionLimit: 5 });
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok' });
+  } catch (e) {
+    console.error('Health check do banco falhou:', e.code || e.message);
+    res.status(503).json({ status: 'unavailable' });
+  }
+});
 const HASH_FALSO = bcrypt.hashSync('senha-falsa', 12);   // iguala o tempo de resposta quando o e-mail não existe
 const resetSolicitacoes = new Map();
 const limiteReset = (ip, agora = Date.now()) => {
